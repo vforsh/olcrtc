@@ -17,6 +17,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	cryptopkg "github.com/openlibrecommunity/olcrtc/internal/crypto"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/runtime"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
@@ -546,7 +547,9 @@ func TestOpenControlStreamStopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		_, _, _, err := openControlStreamTimeout(ctx, clientSess, "dev", nil, time.Hour)
+		_, _, err := openControlStreamTimeout(
+			ctx, clientSess, "dev", nil, handshake.Expectation{}, time.Hour,
+		)
 		errCh <- err
 	}()
 

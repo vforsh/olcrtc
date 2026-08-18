@@ -112,6 +112,16 @@ room:
   id: "https://REPLACE_ME_WITH_HOST/REPLACE_ME_WITH_ROOM_ID"
 crypto:
   key: "REPLACE_ME_WITH_64_HEX_CHARS"
+server:
+  wire: OLC3
+  build: "REPLACE_ME_WITH_40_HEX_FORK_COMMIT"
+  profile_id: "00000000-0000-4000-8000-000000000000"
+  current_profile_revision: 1
+  minimum_profile_revision: 1
+  endpoint_id: jitsi-primary
+  capabilities: [server-hello-v1, notice-v1, drain-v1]
+  state: ready
+  reason: none
 net:
   transport: datachannel
   dns: "8.8.8.8:53"
@@ -129,6 +139,14 @@ room:
   id: "https://REPLACE_ME_WITH_HOST/REPLACE_ME_WITH_ROOM_ID"
 crypto:
   key: "REPLACE_ME_WITH_64_HEX_CHARS"
+server:
+  wire: OLC3
+  build: "REPLACE_ME_WITH_40_HEX_FORK_COMMIT"
+  profile_id: "00000000-0000-4000-8000-000000000000"
+  current_profile_revision: 1
+  minimum_profile_revision: 1
+  endpoint_id: jitsi-primary
+  capabilities: [server-hello-v1, notice-v1, drain-v1]
 net:
   transport: datachannel
   dns: "8.8.8.8:53"
@@ -139,7 +157,7 @@ socks:
 
 ## Liveness
 
-После `CLIENT_HELLO` / `SERVER_WELCOME` первый smux stream остаётся открытым как зашифрованный control stream. По нему `olcrtc` отправляет `CONTROL_PING` / `CONTROL_PONG`, чтобы проверять именно рабочий путь туннеля, а не только статус WebRTC-соединения.
+После `CLIENT_HELLO` / `SERVER_HELLO` первый smux stream остаётся открытым как зашифрованный control stream. Клиент проверяет wire, build, profile ID, endpoint ID, окно ревизий и capabilities до открытия трафика. По control stream `olcrtc` отправляет `CONTROL_PING` / `CONTROL_PONG` и типизированные `CONTROL_NOTICE`. Полный контракт описан в [protocol-olc3.ru.md](protocol-olc3.ru.md).
 
 ```yaml
 liveness:

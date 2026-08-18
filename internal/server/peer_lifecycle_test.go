@@ -125,6 +125,7 @@ func TestRejectedPeerHandshakeWakesServePeer(t *testing.T) {
 		},
 		health: runtime.NewHealthTracker(nil), peerSessions: map[string]*peerSession{peer.peerID: peer},
 		peerStats: make(map[string]peerStat), done: make(chan struct{}),
+		hello: testHandshakeConfig(),
 	}
 	serveDone := make(chan struct{})
 	go func() {
@@ -141,7 +142,7 @@ func TestRejectedPeerHandshakeWakesServePeer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenStream() error = %v", err)
 	}
-	_, _, err = handshake.Client(stream, "rejected-device", nil)
+	_, err = handshake.Client(stream, "rejected-device", nil, testHandshakeExpectation())
 	if !errors.Is(err, handshake.ErrRejected) {
 		t.Fatalf("Client() error = %v, want ErrRejected", err)
 	}

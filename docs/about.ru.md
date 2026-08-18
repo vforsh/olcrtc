@@ -119,25 +119,26 @@ openssl rand -hex 32
 Формат каждой v2-записи:
 
 ```text
-OLC2 (4 байта) | counter uint64 BE (8 байт) | sender prefix (16 байт) | ciphertext | Poly1305 tag (16 байт)
+OLC3 (4 байта) | counter uint64 BE (8 байт) | sender prefix (16 байт) | ciphertext | Poly1305 tag (16 байт)
 ```
 
 XChaCha20 nonce строится как `sender prefix || counter`. Случайный prefix создаётся один раз для send-части keyset, counter начинается с 1 и общий для data/control соединений и reconnect. При исчерпании `uint64` отправка завершается ошибкой без оборачивания счётчика. Полный crypto overhead равен 44 байтам.
 
-Плоскости разделены AEAD associated data: `olcrtc/muxconn/v2/data` и `olcrtc/muxconn/v2/control`. Перенос ciphertext между data и control не проходит аутентификацию.
+Плоскости разделены AEAD associated data: `olcrtc/muxconn/v3/data` и `olcrtc/muxconn/v3/control`. Перенос ciphertext между data и control не проходит аутентификацию.
 
 После успешной AEAD-проверки receive keyset применяет 64-записное скользящее replay-окно отдельно для каждого sender prefix. Состояние общее для data/control muxconn и новых muxconn после reconnect. Хранилище ограничено 256 sender prefix и вытесняет наименее недавно использованный prefix. Неаутентифицированные записи не создают и не изменяют replay state. Повторы и записи старше окна отклоняются отдельными ошибками.
 
-Формат v2 намеренно несовместим с прежним форматом. Декодер не имеет v1 fallback и отклоняет записи без magic `OLC2`.
+Формат OLC3 намеренно несовместим с прежним форматом. Декодер не имеет fallback и отклоняет записи без magic `OLC3`.
 
 Поверх зашифрованного `muxconn` запускается `smux`. Первый smux stream занят handshake и control protocol:
 
 ```text
-CLIENT_HELLO(challenge) -> SERVER_WELCOME(challenge, authenticated peer ID)
+CLIENT_HELLO(challenge) -> SERVER_HELLO(challenge, typed server identity)
 CONTROL_PING <-> CONTROL_PONG
+CONTROL_NOTICE(sequence, state, reason)
 ```
 
-Если control pong не приходит несколько раз подряд, runtime пересобирает smux-сессию или отдаёт управление failover supervisor.
+Клиент проверяет типизированную идентичность сервера до открытия трафика. Если control pong не приходит несколько раз подряд, runtime пересобирает smux-сессию или отдаёт управление failover supervisor. Детали рукопожатия 4 и control protocol 2 описаны в [protocol-olc3.ru.md](protocol-olc3.ru.md).
 
 Общий формат видеокадров OLVC для `seichannel` и `videochannel` имеет версию 5. Он содержит роль отправителя, binding сессии, данные ACK для каждого фрагмента, контрольную сумму фрагмента и CRC всего сообщения. Фрагмент, не прошедший свою контрольную сумму, не подтверждается и переспрашивается, а не теряется вместе с сообщением. Старые кадры отклоняются по magic или версии, поэтому старые сборки видеотранспортов несовместимы.
 

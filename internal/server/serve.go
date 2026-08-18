@@ -128,6 +128,7 @@ type handshakeResult struct {
 	deviceID  string
 }
 
+// ai-generated: compose the runtime peer ID into a validated typed server hello.
 func (s *Server) acceptHandshake(
 	ctx context.Context,
 	session *smux.Session,
@@ -145,7 +146,9 @@ func (s *Server) acceptHandshake(
 			return nil, handshakeResult{}, false
 		}
 		_ = stream.SetDeadline(time.Now().Add(handshake.DefaultTimeout))
-		hello, sessionID, err := handshake.Server(stream, s.authHook, s.localPeerID())
+		helloConfig := s.hello
+		helloConfig.PeerID = s.localPeerID()
+		hello, sessionID, err := handshake.Server(stream, s.authHook, helloConfig)
 		_ = stream.SetDeadline(time.Time{})
 		if err != nil {
 			_ = stream.Close()

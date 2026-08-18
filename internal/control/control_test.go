@@ -156,3 +156,79 @@ func TestReadFrameRejectsTooLarge(t *testing.T) {
 		t.Fatalf("readFrame() error = %v, want ErrFrameTooLarge", err)
 	}
 }
+
+// ai-generated: verify notice delivery does not prevent ping and pong health traffic.
+func TestRunInterleavesNoticesAndPings(t *testing.T) {
+	a, b := controlPair(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notices := make(chan Notice, 2)
+	gotNotice := make(chan Notice, 2)
+	gotPong := make(chan Health, 1)
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- Run(ctx, a, Config{Interval: 5 * time.Millisecond, Timeout: 100 * time.Millisecond, Notices: notices})
+	}()
+	go func() {
+		errCh <- Run(ctx, b, Config{
+			Interval: 5 * time.Millisecond, Timeout: 100 * time.Millisecond,
+			OnNotice: func(notice Notice) { gotNotice <- notice },
+			OnPong: func(health Health) {
+				select {
+				case gotPong <- health:
+				default:
+				}
+			},
+		})
+	}()
+	notices <- Notice{Sequence: 1, State: NoticeDraining, Reason: NoticeReasonMaintenance, RetryAfterSeconds: 30}
+	notices <- Notice{Sequence: 2, State: NoticeUnavailable, Reason: NoticeReasonRetiring}
+	for range 2 {
+		select {
+		case <-gotNotice:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for notice")
+		}
+	}
+	select {
+	case <-gotPong:
+	case <-time.After(time.Second):
+		t.Fatal("notices starved ping/pong")
+	}
+	cancel()
+	for range 2 {
+		if err := <-errCh; err != nil {
+			t.Fatalf("Run() after cancel = %v", err)
+		}
+	}
+}
+
+// ai-generated: reject duplicate and out-of-order notice sequences.
+func TestHandleNoticeRejectsDuplicateSequence(t *testing.T) {
+	s := &state{cfg: Config{}}
+	first := Message{Version: ProtoVersion, Type: TypeNotice, Sequence: 2, State: NoticeDraining, Reason: NoticeReasonMaintenance}
+	if err := s.handleNotice(first); err != nil {
+		t.Fatalf("first notice = %v", err)
+	}
+	if err := s.handleNotice(first); !errors.Is(err, ErrUnexpectedMessage) {
+		t.Fatalf("duplicate notice = %v", err)
+	}
+}
+
+// ai-generated: reject malformed notice values and structural ambiguity.
+func TestParseMessageRejectsMalformedNotice(t *testing.T) {
+	cases := [][]byte{
+		[]byte(`{"version":2,"type":"CONTROL_NOTICE","sequence":1,"state":"unknown","reason":"none"}`),
+		[]byte(`{"version":2,"type":"CONTROL_NOTICE","sequence":1,"sequence":2,"state":"ready","reason":"none"}`),
+		[]byte(`{"version":2,"type":"CONTROL_NOTICE","sequence":1,"state":"ready","reason":"none","secret":"x"}`),
+	}
+	for _, raw := range cases {
+		message, err := parseMessage(raw)
+		if err == nil {
+			err = validateNotice(Notice{Sequence: message.Sequence, State: message.State, Reason: message.Reason, RetryAfterSeconds: message.RetryAfterSeconds})
+		}
+		if err == nil {
+			t.Fatalf("accepted malformed notice: %s", raw)
+		}
+	}
+}

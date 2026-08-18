@@ -27,6 +27,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/engine"
 	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/supervisor"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
@@ -928,20 +929,51 @@ func requireRealRoom(ctx context.Context, t *testing.T, providerName string) str
 
 func validSessionConfig(mode, providerName, transportName string) session.Config {
 	return session.Config{
-		Mode:      mode,
-		Transport: transportName,
-		Provider:  providerName,
-		RoomID:    testRoom,
-		KeyHex:    testKeyHex,
-		SOCKSHost: "127.0.0.1",
-		SOCKSPort: 1080,
-		DNSServer: localDNSServer,
+		Mode:                   mode,
+		Transport:              transportName,
+		Provider:               providerName,
+		RoomID:                 testRoom,
+		KeyHex:                 testKeyHex,
+		SOCKSHost:              "127.0.0.1",
+		SOCKSPort:              1080,
+		DNSServer:              localDNSServer,
+		ServerWire:             handshake.ProductWire,
+		ServerBuild:            "0123456789abcdef0123456789abcdef01234567",
+		ProfileID:              "c0ffee00-cafe-4000-8000-000000000001",
+		CurrentProfileRevision: 2, MinimumProfileRevision: 1,
+		EndpointID:         "jitsi-primary",
+		ServerCapabilities: [3]string{"server-hello-v1", "notice-v1", "drain-v1"},
+		ServerState:        "ready", ServerReason: "none",
 		Video: session.VideoConfig{
 			Width: 1080, Height: 1080, FPS: 30,
 			Codec: "tile", TileModule: 4, TileRS: 20,
 		},
 		VP8: session.VP8Config{FPS: 30, BatchSize: 64},
 		SEI: session.SEIConfig{FPS: 30, BatchSize: 4, FragmentSize: 512, AckTimeoutMS: 1500},
+	}
+}
+
+// ai-generated: construct matching server identity for in-memory OLC3 tests.
+func e2eServerHello() handshake.ServerConfig {
+	return handshake.ServerConfig{
+		Metadata: handshake.ServerMetadata{
+			Wire: handshake.ProductWire, Build: "0123456789abcdef0123456789abcdef01234567",
+			ProfileID:              "c0ffee00-cafe-4000-8000-000000000001",
+			CurrentProfileRevision: 2, MinimumProfileRevision: 1,
+			EndpointID: "jitsi-primary", Capabilities: handshake.MandatoryCapabilities,
+		},
+		Availability: handshake.Availability{State: handshake.AvailabilityReady, Reason: handshake.ReasonNone},
+	}
+}
+
+// ai-generated: construct matching client expectations for in-memory OLC3 tests.
+func e2eExpectation() handshake.Expectation {
+	config := e2eServerHello()
+	return handshake.Expectation{
+		Wire: config.Metadata.Wire, Build: config.Metadata.Build, ProfileID: config.Metadata.ProfileID,
+		ProfileRevision:       config.Metadata.MinimumProfileRevision,
+		EndpointID:            config.Metadata.EndpointID,
+		MandatoryCapabilities: config.Metadata.Capabilities,
 	}
 }
 
@@ -1065,6 +1097,7 @@ func startTunnel(t *testing.T) *tunnelRuntime {
 			RoomURL:   testRoom,
 			KeyHex:    testKeyHex,
 			DNSServer: localDNSServer,
+			Hello:     e2eServerHello(),
 		})
 	}()
 	room.waitConnected(t, 1)
@@ -1073,13 +1106,14 @@ func startTunnel(t *testing.T) *tunnelRuntime {
 	clientErr := make(chan error, 1)
 	go func() {
 		clientErr <- client.RunWithReady(ctx, client.Config{
-			Transport: transportData,
-			Provider:  providerName,
-			RoomURL:   testRoom,
-			KeyHex:    testKeyHex,
-			DeviceID:  testClientDeviceID,
-			LocalAddr: socksAddr,
-			DNSServer: localDNSServer,
+			Transport:      transportData,
+			Provider:       providerName,
+			RoomURL:        testRoom,
+			KeyHex:         testKeyHex,
+			DeviceID:       testClientDeviceID,
+			LocalAddr:      socksAddr,
+			DNSServer:      localDNSServer,
+			ExpectedServer: e2eExpectation(),
 		}, func() { close(ready) })
 	}()
 	waitForReady(t, ready)
@@ -1119,6 +1153,7 @@ func startRealTunnel(
 			DNSServer:        *realE2EDNSServer,
 			TransportOptions: e2eTransportOptions(transportName),
 			Liveness:         control.Config{Interval: 10 * time.Second, Timeout: 60 * time.Second, Failures: 10},
+			Hello:            e2eServerHello(),
 		})
 	}()
 
@@ -1149,6 +1184,7 @@ func startRealTunnel(
 			DNSServer:        *realE2EDNSServer,
 			TransportOptions: e2eTransportOptions(transportName),
 			Liveness:         control.Config{Interval: 10 * time.Second, Timeout: 60 * time.Second, Failures: 10},
+			ExpectedServer:   e2eExpectation(),
 		}, func() { close(ready) })
 	}()
 
@@ -1584,14 +1620,7 @@ func TestSupervisorFailoverProfilesReachWorkingSOCKS(t *testing.T) {
 }
 
 func failoverSessionConfig(mode, providerName, socksHost string, socksPort int) session.Config {
-	cfg := session.Config{
-		Mode:      mode,
-		Transport: transportData,
-		Provider:  providerName,
-		RoomID:    testRoom,
-		KeyHex:    testKeyHex,
-		DNSServer: localDNSServer,
-	}
+	cfg := validSessionConfig(mode, providerName, transportData)
 	if mode == "cnc" {
 		cfg.SOCKSHost = socksHost
 		cfg.SOCKSPort = socksPort
@@ -1612,6 +1641,7 @@ func clientConfigFromSession(cfg session.Config, socksAddr string) client.Config
 		Engine:           cfg.Engine,
 		URL:              cfg.URL,
 		Token:            cfg.Token,
+		ExpectedServer:   e2eExpectation(),
 	}
 }
 

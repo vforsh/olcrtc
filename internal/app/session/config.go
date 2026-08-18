@@ -126,37 +126,46 @@ type SEIConfig struct {
 
 // Config holds runtime session settings.
 type Config struct {
-	Mode                  string
-	Transport             string
-	Provider              string
-	ProviderToken         string
-	Engine                string
-	URL                   string
-	Token                 string
-	RoomID                string
-	ChannelID             string
-	KeyHex                string
-	SOCKSHost             string
-	SOCKSPort             int
-	SOCKSUser             string
-	SOCKSPass             string
-	DNSServer             string
-	Resolver              *net.Resolver
-	SOCKSProxyAddr        string
-	SOCKSProxyPort        int
-	SOCKSProxyUser        string
-	SOCKSProxyPass        string
-	Video                 VideoConfig
-	VP8                   VP8Config
-	SEI                   SEIConfig
-	LivenessInterval      string
-	LivenessTimeout       string
-	LivenessFailures      int
-	MaxSessionDuration    string
-	TrafficMaxPayloadSize int
-	TrafficMinDelay       string
-	TrafficMaxDelay       string
-	Amount                int
+	Mode                   string
+	Transport              string
+	Provider               string
+	ProviderToken          string
+	Engine                 string
+	URL                    string
+	Token                  string
+	RoomID                 string
+	ChannelID              string
+	KeyHex                 string
+	SOCKSHost              string
+	SOCKSPort              int
+	SOCKSUser              string
+	SOCKSPass              string
+	DNSServer              string
+	Resolver               *net.Resolver
+	SOCKSProxyAddr         string
+	SOCKSProxyPort         int
+	SOCKSProxyUser         string
+	SOCKSProxyPass         string
+	Video                  VideoConfig
+	VP8                    VP8Config
+	SEI                    SEIConfig
+	LivenessInterval       string
+	LivenessTimeout        string
+	LivenessFailures       int
+	MaxSessionDuration     string
+	TrafficMaxPayloadSize  int
+	TrafficMinDelay        string
+	TrafficMaxDelay        string
+	ServerWire             string
+	ServerBuild            string
+	ProfileID              string
+	CurrentProfileRevision uint64
+	MinimumProfileRevision uint64
+	EndpointID             string
+	ServerCapabilities     [3]string
+	ServerState            string
+	ServerReason           string
+	Amount                 int
 }
 
 // RegisterDefaults registers built-in providers and transports.

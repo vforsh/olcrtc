@@ -74,6 +74,16 @@ type HealthStatus = control.Status
 // HealthFunc is called when the control-stream health snapshot changes.
 type HealthFunc func(HealthStatus)
 
+// ai-generated: expose safe OLC3 server identity through the public tunnel API.
+// ServerMetadata is the safe identity embedded in every SERVER_HELLO.
+type ServerMetadata = handshake.ServerMetadata
+
+// Availability is the initial typed endpoint state.
+type Availability = handshake.Availability
+
+// ServerNotice is a typed runtime availability transition.
+type ServerNotice = control.Notice
+
 // LivenessConfig controls control-stream ping and pong checks.
 type LivenessConfig struct {
 	Interval time.Duration
@@ -113,6 +123,9 @@ type Config struct {
 	OnSessionClose   SessionCloseFunc
 	OnTraffic        TrafficFunc
 	OnHealth         HealthFunc
+	Server           ServerMetadata
+	Availability     Availability
+	Notices          <-chan ServerNotice
 }
 
 type runner func(context.Context, server.Config) error
@@ -137,6 +150,7 @@ func (s *Server) Run(ctx context.Context) error {
 	return nil
 }
 
+// ai-generated: bridge public safe identity and notices into the server runtime.
 func toServerConfig(cfg Config) server.Config {
 	return server.Config{
 		Transport: cfg.Transport, Provider: cfg.Provider, RoomURL: cfg.RoomURL,
@@ -156,6 +170,8 @@ func toServerConfig(cfg Config) server.Config {
 		OnSessionOpen:  server.SessionOpenFunc(cfg.OnSessionOpen),
 		OnSessionClose: server.SessionCloseFunc(cfg.OnSessionClose),
 		OnTraffic:      server.TrafficFunc(cfg.OnTraffic), OnHealth: server.HealthFunc(cfg.OnHealth),
+		Hello:   handshake.ServerConfig{Metadata: cfg.Server, Availability: cfg.Availability},
+		Notices: cfg.Notices,
 	}
 }
 

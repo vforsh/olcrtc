@@ -48,6 +48,7 @@ type Settings struct {
 	Liveness  Liveness  `yaml:"liveness"`
 	Lifecycle Lifecycle `yaml:"lifecycle"`
 	Traffic   Traffic   `yaml:"traffic"`
+	Server    Server    `yaml:"server"`
 }
 
 // File is the on-disk YAML schema.
@@ -177,6 +178,20 @@ type Traffic struct {
 	MaxDelay       string `yaml:"max_delay"`
 }
 
+// ai-generated: define safe OLC3 product identity and availability configuration.
+// Server holds safe product identity and availability fields.
+type Server struct {
+	Wire                   string    `yaml:"wire"`
+	Build                  string    `yaml:"build"`
+	ProfileID              string    `yaml:"profile_id"`
+	CurrentProfileRevision uint64    `yaml:"current_profile_revision"`
+	MinimumProfileRevision uint64    `yaml:"minimum_profile_revision"`
+	EndpointID             string    `yaml:"endpoint_id"`
+	Capabilities           [3]string `yaml:"capabilities"`
+	State                  string    `yaml:"state"`
+	Reason                 string    `yaml:"reason"`
+}
+
 // Gen controls room-generation mode.
 type Gen struct {
 	Amount int `yaml:"amount"`
@@ -283,6 +298,7 @@ func ApplyProfile(base session.Config, profile Profile) session.Config {
 
 // ApplySettings overlays every non-zero field of s onto dst. It is the single
 // place that knows how the YAML schema maps onto [session.Config].
+// ai-generated: overlay safe OLC3 server identity fields into session configuration.
 func ApplySettings(dst session.Config, s Settings) session.Config {
 	dst.Transport = overlay(dst.Transport, s.Net.Transport)
 	dst.DNSServer = overlay(dst.DNSServer, s.Net.DNS)
@@ -333,6 +349,16 @@ func ApplySettings(dst session.Config, s Settings) session.Config {
 	dst.TrafficMaxPayloadSize = overlay(dst.TrafficMaxPayloadSize, s.Traffic.MaxPayloadSize)
 	dst.TrafficMinDelay = overlay(dst.TrafficMinDelay, s.Traffic.MinDelay)
 	dst.TrafficMaxDelay = overlay(dst.TrafficMaxDelay, s.Traffic.MaxDelay)
+
+	dst.ServerWire = overlay(dst.ServerWire, s.Server.Wire)
+	dst.ServerBuild = overlay(dst.ServerBuild, s.Server.Build)
+	dst.ProfileID = overlay(dst.ProfileID, s.Server.ProfileID)
+	dst.CurrentProfileRevision = overlay(dst.CurrentProfileRevision, s.Server.CurrentProfileRevision)
+	dst.MinimumProfileRevision = overlay(dst.MinimumProfileRevision, s.Server.MinimumProfileRevision)
+	dst.EndpointID = overlay(dst.EndpointID, s.Server.EndpointID)
+	dst.ServerCapabilities = overlay(dst.ServerCapabilities, s.Server.Capabilities)
+	dst.ServerState = overlay(dst.ServerState, s.Server.State)
+	dst.ServerReason = overlay(dst.ServerReason, s.Server.Reason)
 
 	return dst
 }

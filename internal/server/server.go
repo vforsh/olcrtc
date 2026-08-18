@@ -79,6 +79,8 @@ type Server struct {
 	socksProxyUser string
 	socksProxyPass string
 	liveness       control.Config
+	hello          handshake.ServerConfig
+	notices        <-chan control.Notice
 	health         *runtime.HealthTracker
 	state          stateGate
 	done           chan struct{}
@@ -110,10 +112,16 @@ type Config struct {
 	OnSessionClose   SessionCloseFunc
 	OnTraffic        TrafficFunc
 	OnHealth         HealthFunc
+	Hello            handshake.ServerConfig
+	Notices          <-chan control.Notice
 }
 
 // Run starts the server with the given configuration.
+// ai-generated: fail server startup before transport when OLC3 identity is incomplete.
 func Run(ctx context.Context, cfg Config) error {
+	if err := handshake.ValidateServerConfig(cfg.Hello); err != nil {
+		return fmt.Errorf("server identity: %w", err)
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	keys, err := tunnelcore.SetupKeySet(cfg.KeyHex, crypto.Server)
@@ -142,6 +150,7 @@ func Run(ctx context.Context, cfg Config) error {
 		socksProxyAddr: cfg.SOCKSProxyAddr, socksProxyPort: cfg.SOCKSProxyPort,
 		socksProxyUser: cfg.SOCKSProxyUser, socksProxyPass: cfg.SOCKSProxyPass,
 		liveness: cfg.Liveness, health: runtime.NewHealthTracker(cfg.OnHealth),
+		hello: cfg.Hello, notices: cfg.Notices,
 		peerSessions: make(map[string]*peerSession), peerStats: make(map[string]peerStat),
 		done: make(chan struct{}),
 	}

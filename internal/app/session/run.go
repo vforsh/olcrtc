@@ -8,6 +8,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/control"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
@@ -72,6 +73,7 @@ func runOnce(
 	}
 }
 
+// ai-generated: pass validated OLC3 identity and availability into the server runtime.
 func runServer(
 	ctx context.Context,
 	cfg Config,
@@ -87,6 +89,10 @@ func runServer(
 		SOCKSProxyUser: cfg.SOCKSProxyUser, SOCKSProxyPass: cfg.SOCKSProxyPass,
 		TransportOptions: opts, Engine: cfg.Engine, URL: cfg.URL, Token: cfg.Token,
 		ProviderToken: cfg.ProviderToken, Liveness: liveness, Traffic: traffic,
+		Hello: handshake.ServerConfig{
+			Metadata:     serverMetadata(cfg),
+			Availability: serverAvailability(cfg),
+		},
 		OnSessionOpen: func(sessionID, deviceID string, claims map[string]any) {
 			logger.Infof("session opened: id=%s device=%s claims=%v", sessionID, deviceID, claims)
 		},
@@ -103,6 +109,7 @@ func runServer(
 	return nil
 }
 
+// ai-generated: bind the client runtime to the configured OLC3 server identity.
 func runClient(
 	ctx context.Context,
 	cfg Config,
@@ -118,11 +125,43 @@ func runClient(
 		SOCKSPass: cfg.SOCKSPass, TransportOptions: opts, Engine: cfg.Engine,
 		URL: cfg.URL, Token: cfg.Token, ProviderToken: cfg.ProviderToken,
 		Liveness: liveness, Traffic: traffic,
+		ExpectedServer: handshake.Expectation{
+			Wire: cfg.ServerWire, Build: cfg.ServerBuild, ProfileID: cfg.ProfileID,
+			ProfileRevision: cfg.CurrentProfileRevision, EndpointID: cfg.EndpointID,
+			MandatoryCapabilities: serverCapabilities(cfg),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("client: %w", err)
 	}
 	return nil
+}
+
+// ai-generated: map safe CLI identity fields to the handshake contract.
+func serverMetadata(cfg Config) handshake.ServerMetadata {
+	return handshake.ServerMetadata{
+		Wire: cfg.ServerWire, Build: cfg.ServerBuild, ProfileID: cfg.ProfileID,
+		CurrentProfileRevision: cfg.CurrentProfileRevision,
+		MinimumProfileRevision: cfg.MinimumProfileRevision,
+		EndpointID:             cfg.EndpointID, Capabilities: serverCapabilities(cfg),
+	}
+}
+
+// ai-generated: map configured string capabilities to typed protocol values.
+func serverCapabilities(cfg Config) []handshake.Capability {
+	capabilities := make([]handshake.Capability, 0, len(cfg.ServerCapabilities))
+	for _, capability := range cfg.ServerCapabilities {
+		capabilities = append(capabilities, handshake.Capability(capability))
+	}
+	return capabilities
+}
+
+// ai-generated: map initial server state into the typed handshake contract.
+func serverAvailability(cfg Config) handshake.Availability {
+	return handshake.Availability{
+		State:  handshake.AvailabilityState(cfg.ServerState),
+		Reason: handshake.AvailabilityReason(cfg.ServerReason),
+	}
 }
 
 func runWithSessionRotation(

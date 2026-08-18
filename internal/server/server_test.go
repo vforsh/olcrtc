@@ -793,7 +793,7 @@ func TestAcceptHandshakeReturnsResultWithoutTouchingServerFields(t *testing.T) {
 		if err != nil {
 			return
 		}
-		_, _, _ = handshake.Client(stream, "device-A", nil)
+		_, _ = handshake.Client(stream, "device-A", nil, testHandshakeExpectation())
 	}()
 
 	stream, res, ok := s.acceptHandshake(context.Background(), serverSess)
@@ -837,7 +837,7 @@ func TestAcceptSingletonHandshakeStoresServerFields(t *testing.T) {
 		if err != nil {
 			return
 		}
-		_, _, _ = handshake.Client(stream, "device-B", nil)
+		_, _ = handshake.Client(stream, "device-B", nil, testHandshakeExpectation())
 	}()
 
 	if !s.acceptSingletonHandshake(ctx, serverSess) {
@@ -1126,5 +1126,32 @@ func newHandshakeServer() *Server {
 		onClose:   func(string, string) {},
 		health:    runtime.NewHealthTracker(nil),
 		peerStats: make(map[string]peerStat),
+		hello:     testHandshakeConfig(),
+	}
+}
+
+// ai-generated: construct safe identity for server package handshake tests.
+func testHandshakeConfig() handshake.ServerConfig {
+	return handshake.ServerConfig{
+		Metadata: handshake.ServerMetadata{
+			Wire: handshake.ProductWire, Build: "0123456789abcdef0123456789abcdef01234567",
+			ProfileID:              "c0ffee00-cafe-4000-8000-000000000001",
+			CurrentProfileRevision: 2, MinimumProfileRevision: 1,
+			EndpointID: "jitsi-primary", Capabilities: handshake.MandatoryCapabilities,
+		},
+		Availability: handshake.Availability{
+			State: handshake.AvailabilityReady, Reason: handshake.ReasonNone,
+		},
+	}
+}
+
+// ai-generated: construct matching client expectations for server package tests.
+func testHandshakeExpectation() handshake.Expectation {
+	config := testHandshakeConfig()
+	return handshake.Expectation{
+		Wire: config.Metadata.Wire, Build: config.Metadata.Build, ProfileID: config.Metadata.ProfileID,
+		ProfileRevision:       config.Metadata.MinimumProfileRevision,
+		EndpointID:            config.Metadata.EndpointID,
+		MandatoryCapabilities: config.Metadata.Capabilities,
 	}
 }

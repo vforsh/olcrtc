@@ -16,6 +16,7 @@ import (
 
 const peerWaitTimeout = handshake.DefaultTimeout
 
+// ai-generated: require fresh typed OLC3 server verification for each new link session.
 func (c *Client) bringUpLink(ctx context.Context, cfg Config, cancel context.CancelFunc) error {
 	linkCfg := tunnelcore.BuildTransportConfig(tunnelcore.LinkConfig{
 		Provider: cfg.Provider, RoomURL: cfg.RoomURL, Engine: cfg.Engine,
@@ -44,6 +45,9 @@ func (c *Client) bringUpLink(ctx context.Context, cfg Config, cancel context.Can
 	if connectErr := link.Connect(ctx); connectErr != nil {
 		return fmt.Errorf("failed to connect link: %w", connectErr)
 	}
+	if cfg.OnProviderJoined != nil {
+		cfg.OnProviderJoined()
+	}
 	c.conn = muxconn.New(link, c.keys)
 	c.controlConn = muxconn.NewControl(link, c.keys)
 	pair, err := tunnelcore.NewSessionPairWithConns(
@@ -55,12 +59,14 @@ func (c *Client) bringUpLink(ctx context.Context, cfg Config, cancel context.Can
 		}
 		return fmt.Errorf("create smux sessions: %w", err)
 	}
-	control, sessionID, peerID, err := openControlStream(ctx, pair.ControlSession, c.deviceID, c.claims)
+	control, serverHello, err := openControlStream(
+		ctx, pair.ControlSession, c.deviceID, c.claims, cfg.ExpectedServer,
+	)
 	if err != nil {
 		_ = pair.Close()
 		return fmt.Errorf("handshake: %w", err)
 	}
-	if err := confirmPeer(link, peerID); err != nil {
+	if err := confirmPeer(link, serverHello.PeerID); err != nil {
 		_ = pair.Close()
 		return err
 	}
@@ -68,14 +74,17 @@ func (c *Client) bringUpLink(ctx context.Context, cfg Config, cancel context.Can
 		_ = pair.Close()
 		return waitErr
 	}
-	logger.Infof("session %s opened (device=%s)", sessionID, c.deviceID)
+	logger.Infof("session %s opened (device=%s)", serverHello.SessionID, c.deviceID)
 	c.sessMu.Lock()
 	c.installPairLocked(pair)
 	c.controlStrm = control
-	c.sessionID = sessionID
+	c.sessionID = serverHello.SessionID
 	c.sessMu.Unlock()
 	c.signalSessionReady()
-	c.health.RecordSession(sessionID)
+	c.health.RecordSession(serverHello.SessionID)
+	if cfg.OnServerHello != nil {
+		cfg.OnServerHello(serverHello)
+	}
 	c.startControlLoop(ctx, cfg, cancel, control)
 	c.goTracked(func() { link.WatchConnection(ctx) })
 	return nil
@@ -108,25 +117,29 @@ func confirmPeer(link transport.Transport, peerID string) error {
 	return nil
 }
 
+// ai-generated: return the authoritative typed server hello from the control stream.
 func openControlStream(
 	ctx context.Context,
 	session *smux.Session,
 	deviceID string,
 	claims map[string]any,
-) (*smux.Stream, string, string, error) {
-	return openControlStreamTimeout(ctx, session, deviceID, claims, handshake.DefaultTimeout)
+	expected handshake.Expectation,
+) (*smux.Stream, handshake.ServerHello, error) {
+	return openControlStreamTimeout(ctx, session, deviceID, claims, expected, handshake.DefaultTimeout)
 }
 
+// ai-generated: apply a deadline while performing strict typed server verification.
 func openControlStreamTimeout(
 	ctx context.Context,
 	session *smux.Session,
 	deviceID string,
 	claims map[string]any,
+	expected handshake.Expectation,
 	timeout time.Duration,
-) (*smux.Stream, string, string, error) {
+) (*smux.Stream, handshake.ServerHello, error) {
 	stream, err := session.OpenStream()
 	if err != nil {
-		return nil, "", "", fmt.Errorf("open control stream: %w", err)
+		return nil, handshake.ServerHello{}, fmt.Errorf("open control stream: %w", err)
 	}
 	done := make(chan struct{})
 	go func() {
@@ -138,16 +151,16 @@ func openControlStreamTimeout(
 	}()
 	defer close(done)
 	_ = stream.SetDeadline(time.Now().Add(timeout))
-	sessionID, peerID, err := handshake.Client(stream, deviceID, claims)
+	serverHello, err := handshake.Client(stream, deviceID, claims, expected)
 	_ = stream.SetDeadline(time.Time{})
 	if err != nil {
 		_ = stream.Close()
 		if ctx.Err() != nil {
-			return nil, "", "", fmt.Errorf("handshake client: %w", ctx.Err())
+			return nil, handshake.ServerHello{}, fmt.Errorf("handshake client: %w", ctx.Err())
 		}
-		return nil, "", "", fmt.Errorf("handshake client: %w", err)
+		return nil, handshake.ServerHello{}, fmt.Errorf("handshake client: %w", err)
 	}
-	return stream, sessionID, peerID, nil
+	return stream, serverHello, nil
 }
 
 func (c *Client) handleReconnect(ctx context.Context, cfg Config, cancel context.CancelFunc, reason string) {
@@ -292,6 +305,7 @@ func maxHandshakeAttempts(reason string) int {
 	}
 }
 
+// ai-generated: require a new OLC3 server hello after provider reconnection.
 func (c *Client) tryReopenSession(
 	ctx context.Context,
 	cfg Config,
@@ -320,15 +334,15 @@ func (c *Client) tryReopenSession(
 		}
 		return false
 	}
-	control, sessionID, peerID, err := openControlStreamTimeout(
-		ctx, pair.ControlSession, c.deviceID, c.claims, handshake.DefaultTimeout,
+	control, serverHello, err := openControlStreamTimeout(
+		ctx, pair.ControlSession, c.deviceID, c.claims, cfg.ExpectedServer, handshake.DefaultTimeout,
 	)
 	if err != nil {
 		logger.Warnf("handshake on reconnect failed (attempt %d): %v", attempt, err)
 		_ = pair.Close()
 		return false
 	}
-	if err := confirmPeer(c.ln, peerID); err != nil {
+	if err := confirmPeer(c.ln, serverHello.PeerID); err != nil {
 		logger.Warnf("peer confirmation on reconnect failed (attempt %d): %v", attempt, err)
 		_ = pair.Close()
 		return false
@@ -338,14 +352,17 @@ func (c *Client) tryReopenSession(
 		_ = pair.Close()
 		return false
 	}
-	logger.Infof("session %s reopened (device=%s)", sessionID, c.deviceID)
+	logger.Infof("session %s reopened (device=%s)", serverHello.SessionID, c.deviceID)
 	c.sessMu.Lock()
 	c.installPairLocked(pair)
 	c.controlStrm = control
-	c.sessionID = sessionID
+	c.sessionID = serverHello.SessionID
 	c.sessMu.Unlock()
 	c.signalSessionReady()
-	c.health.RecordSession(sessionID)
+	c.health.RecordSession(serverHello.SessionID)
+	if cfg.OnServerHello != nil {
+		cfg.OnServerHello(serverHello)
+	}
 	c.startControlLoop(ctx, cfg, cancel, control)
 	return true
 }

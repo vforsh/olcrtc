@@ -10,14 +10,17 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/tunnelcore"
 )
 
+// ai-generated: serialize configured server notices through the control writer.
 func (s *Server) startControlLoop(ctx context.Context, session *smux.Session, stream *smux.Stream) {
 	controlCtx, stop := context.WithCancel(ctx)
 	s.sessMu.Lock()
 	s.controlStrm = stream
 	s.controlStop = stop
 	s.sessMu.Unlock()
+	controlConfig := s.liveness
+	controlConfig.Notices = s.notices
 	runner := tunnelcore.ControlRunner{
-		Transport: s.ln, Config: s.liveness, Health: s.health,
+		Transport: s.ln, Config: controlConfig, Health: s.health,
 		LogFields: func() string { return "role=server session=" + s.currentSessionID() },
 		OnDeath: func(error) {
 			s.health.RecordReconnect()

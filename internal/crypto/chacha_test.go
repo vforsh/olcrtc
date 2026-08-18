@@ -11,8 +11,8 @@ import (
 
 const (
 	testPSK        = "01234567890123456789012345678901"
-	testDataAAD    = "olcrtc/muxconn/v2/data"
-	testControlAAD = "olcrtc/muxconn/v2/control"
+	testDataAAD    = "olcrtc/muxconn/v3/data"
+	testControlAAD = "olcrtc/muxconn/v3/control"
 )
 
 func newKeyPair(tb testing.TB) (*KeySet, *KeySet) {

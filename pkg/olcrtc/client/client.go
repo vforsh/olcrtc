@@ -12,6 +12,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	internalclient "github.com/openlibrecommunity/olcrtc/internal/client"
 	"github.com/openlibrecommunity/olcrtc/internal/control"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/seichannel"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/videochannel"
@@ -61,6 +62,22 @@ type HealthStatus = control.Status
 // HealthFunc is called when the control-stream health snapshot changes.
 type HealthFunc func(HealthStatus)
 
+// ai-generated: expose signed product identity expectations through the public client API.
+// ServerExpectation binds the client to signed product identity.
+type ServerExpectation = handshake.Expectation
+
+// ServerHello is the authoritative typed handshake response.
+type ServerHello = handshake.ServerHello
+
+// ServerNotice is a typed runtime availability transition.
+type ServerNotice = control.Notice
+
+// ServerHelloFunc receives each validated handshake, including reconnects.
+type ServerHelloFunc func(ServerHello)
+
+// ServerNoticeFunc receives each valid monotonic notice.
+type ServerNoticeFunc func(ServerNotice)
+
 // LivenessConfig controls control-stream ping and pong checks.
 type LivenessConfig struct {
 	Interval time.Duration
@@ -98,6 +115,10 @@ type Config struct {
 	DeviceIDPath     string
 	Claims           map[string]any
 	OnHealth         HealthFunc
+	ExpectedServer   ServerExpectation
+	OnServerHello    ServerHelloFunc
+	OnServerNotice   ServerNoticeFunc
+	OnProviderJoined func()
 }
 
 type runner func(context.Context, internalclient.Config, func(string)) error
@@ -135,6 +156,7 @@ func (c *Client) RunWithAddress(ctx context.Context, onReady func(actualAddr str
 	return nil
 }
 
+// ai-generated: bridge public typed server callbacks into the internal client.
 func toClientConfig(cfg Config) internalclient.Config {
 	return internalclient.Config{
 		Transport: cfg.Transport, Provider: cfg.Provider, RoomURL: cfg.RoomURL,
@@ -150,7 +172,10 @@ func toClientConfig(cfg Config) internalclient.Config {
 			MinDelay:       cfg.Traffic.MinDelay, MaxDelay: cfg.Traffic.MaxDelay,
 		},
 		DeviceID: cfg.DeviceID, DeviceIDPath: cfg.DeviceIDPath, Claims: cfg.Claims,
-		OnHealth: internalclient.HealthFunc(cfg.OnHealth),
+		OnHealth: internalclient.HealthFunc(cfg.OnHealth), ExpectedServer: cfg.ExpectedServer,
+		OnServerHello:    internalclient.ServerHelloFunc(cfg.OnServerHello),
+		OnServerNotice:   internalclient.ServerNoticeFunc(cfg.OnServerNotice),
+		OnProviderJoined: cfg.OnProviderJoined,
 	}
 }
 

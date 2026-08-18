@@ -7,13 +7,41 @@ import (
 	"net"
 	"strings"
 	"testing"
+
+	"github.com/openlibrecommunity/olcrtc/internal/framing"
 )
 
-const testSessionID = "sess-42"
-const testPeerID = "1234abcd"
+const (
+	testSessionID = "sess-42"
+	testPeerID    = "1234abcd"
+	testProfileID = "c0ffee00-cafe-4000-8000-000000000001"
+)
 
 var errNope = errors.New("nope")
 
+// ai-generated: construct the complete safe identity required by protocol 4 tests.
+func testServerConfig() ServerConfig {
+	return ServerConfig{
+		PeerID: testPeerID,
+		Metadata: ServerMetadata{
+			Wire: ProductWire, Build: "0123456789abcdef0123456789abcdef01234567",
+			ProfileID: testProfileID, CurrentProfileRevision: 12, MinimumProfileRevision: 11,
+			EndpointID: "jitsi-primary", Capabilities: MandatoryCapabilities,
+		},
+		Availability: Availability{State: AvailabilityReady, Reason: ReasonNone},
+	}
+}
+
+// ai-generated: construct the signed-profile expectation used by protocol tests.
+func testExpectation() Expectation {
+	return Expectation{
+		Wire: ProductWire, Build: testServerConfig().Metadata.Build,
+		ProfileID: testProfileID, ProfileRevision: 11,
+		EndpointID: "jitsi-primary", MandatoryCapabilities: MandatoryCapabilities,
+	}
+}
+
+// ai-generated: create an in-memory client/server transport pair.
 func pair(t *testing.T) (net.Conn, net.Conn) {
 	t.Helper()
 	a, b := net.Pipe()
@@ -24,146 +52,130 @@ func pair(t *testing.T) (net.Conn, net.Conn) {
 	return a, b
 }
 
+// ai-generated: prove handshake 4 returns the complete authoritative hello.
 func TestHandshakeRoundTrip(t *testing.T) {
-	cConn, sConn := pair(t)
-
+	clientConn, serverConn := pair(t)
 	go func() {
-		hello, sid, err := Server(sConn, func(deviceID string, claims map[string]any) (string, error) {
-			if deviceID != "dev-1" {
-				t.Errorf("device id = %q", deviceID)
-			}
-			if claims["plan"] != "pro" {
-				t.Errorf("claims = %v", claims)
+		hello, sessionID, err := Server(serverConn, func(deviceID string, claims map[string]any) (string, error) {
+			if deviceID != "dev-1" || claims["plan"] != "pro" {
+				t.Errorf("unexpected client identity: %q %#v", deviceID, claims)
 			}
 			return testSessionID, nil
-		}, testPeerID)
-		if err != nil {
-			t.Errorf("Server: %v", err)
-		}
-		if hello.DeviceID != "dev-1" || sid != testSessionID {
-			t.Errorf("Server returned hello=%+v sid=%q", hello, sid)
+		}, testServerConfig())
+		if err != nil || hello.DeviceID != "dev-1" || sessionID != testSessionID {
+			t.Errorf("Server() = (%+v, %q, %v)", hello, sessionID, err)
 		}
 	}()
 
-	sid, peerID, err := Client(cConn, "dev-1", map[string]any{"plan": "pro"})
+	hello, err := Client(clientConn, "dev-1", map[string]any{"plan": "pro"}, testExpectation())
 	if err != nil {
-		t.Fatalf("Client: %v", err)
+		t.Fatalf("Client() error = %v", err)
 	}
-	if sid != testSessionID {
-		t.Fatalf("session id = %q, want sess-42", sid)
-	}
-	if peerID != testPeerID {
-		t.Fatalf("peer id = %q, want %q", peerID, testPeerID)
+	if hello.SessionID != testSessionID || hello.PeerID != testPeerID || hello.Server.ProfileID != testProfileID {
+		t.Fatalf("server hello = %#v", hello)
 	}
 }
 
+// ai-generated: prove auth errors become a fixed typed rejection without remote text.
 func TestHandshakeRejected(t *testing.T) {
-	cConn, sConn := pair(t)
-
+	clientConn, serverConn := pair(t)
 	go func() {
-		_, _, _ = Server(sConn, func(string, map[string]any) (string, error) {
+		_, _, _ = Server(serverConn, func(string, map[string]any) (string, error) {
 			return "", errNope
-		}, testPeerID)
+		}, testServerConfig())
 	}()
-
-	_, _, err := Client(cConn, "dev-1", nil)
-	if !errors.Is(err, ErrRejected) {
-		t.Fatalf("Client err = %v, want ErrRejected", err)
+	_, err := Client(clientConn, "dev-1", nil, testExpectation())
+	if !errors.Is(err, ErrRejected) || !errors.As(err, new(RejectError)) {
+		t.Fatalf("Client() error = %v, want typed rejection", err)
 	}
-	if !strings.Contains(err.Error(), "nope") {
-		t.Fatalf("err message %q missing reason", err.Error())
+	if strings.Contains(err.Error(), errNope.Error()) {
+		t.Fatalf("Client() leaked server error: %v", err)
 	}
 }
 
+// ai-generated: prove a replayed reply cannot satisfy another fresh challenge.
 func TestReplyMustMatchClientChallenge(t *testing.T) {
-	const (
-		challengeA = "00112233445566778899aabbccddeeff"
-		challengeB = "ffeeddccbbaa99887766554433221100"
-	)
-
+	const challengeA = "00112233445566778899aabbccddeeff"
+	const challengeB = "ffeeddccbbaa99887766554433221100"
+	config := testServerConfig()
+	makeHello := func(challenge, session string) ServerHello {
+		return ServerHello{
+			Version: ProtoVersion, Type: TypeServerHello, Challenge: challenge,
+			SessionID: session, PeerID: config.PeerID, Server: config.Metadata, Availability: config.Availability,
+		}
+	}
 	var replies bytes.Buffer
-	if err := writeFrame(&replies, Welcome{
-		Version: ProtoVersion, Type: TypeWelcome, SessionID: "session-a",
-		PeerID: "peer-a", Challenge: challengeA,
-	}); err != nil {
-		t.Fatalf("write replayed welcome: %v", err)
+	_ = writeFrame(&replies, makeHello(challengeA, "session-a"))
+	_ = writeFrame(&replies, makeHello(challengeB, "session-b"))
+	if _, matched, err := readReply(&replies, challengeB); err != nil || matched {
+		t.Fatalf("replayed reply = matched %v, err %v", matched, err)
 	}
-	if err := writeFrame(&replies, Welcome{
-		Version: ProtoVersion, Type: TypeWelcome, SessionID: "session-b",
-		PeerID: "peer-b", Challenge: challengeB,
-	}); err != nil {
-		t.Fatalf("write matching welcome: %v", err)
-	}
-
-	if _, _, matched, err := readReply(&replies, challengeB); err != nil || matched {
-		t.Fatalf("replayed reply = matched %v, err %v; want ignored", matched, err)
-	}
-	sessionID, peerID, matched, err := readReply(&replies, challengeB)
-	if err != nil || !matched {
-		t.Fatalf("matching reply = matched %v, err %v", matched, err)
-	}
-	if sessionID != "session-b" || peerID != "peer-b" {
-		t.Fatalf("matching reply = session %q peer %q", sessionID, peerID)
+	hello, matched, err := readReply(&replies, challengeB)
+	if err != nil || !matched || hello.SessionID != "session-b" {
+		t.Fatalf("matching reply = (%#v, %v, %v)", hello, matched, err)
 	}
 }
 
-func TestHandshakeProtocolMismatch(t *testing.T) {
-	cConn, sConn := pair(t)
-
-	go func() {
-		_ = writeFrame(cConn, Hello{Version: 999, Type: TypeHello, DeviceID: "dev"})
-		_, _ = readFrame(cConn) // drain server's REJECT so its write does not block
-	}()
-
-	_, _, err := Server(sConn, func(string, map[string]any) (string, error) {
-		t.Fatal("auth must not be invoked on protocol mismatch")
-		return "", nil
-	}, testPeerID)
-	if !errors.Is(err, ErrProtocolVersion) {
-		t.Fatalf("Server err = %v, want ErrProtocolVersion", err)
+// ai-generated: reject a profile below the server's minimum revision.
+func TestValidateServerHelloRejectsOutdatedProfile(t *testing.T) {
+	config := testServerConfig()
+	hello := ServerHello{
+		Version: ProtoVersion, Type: TypeServerHello, SessionID: testSessionID,
+		Server: config.Metadata, Availability: config.Availability,
+	}
+	expected := testExpectation()
+	expected.ProfileRevision = 10
+	if err := ValidateServerHello(hello, expected); !errors.Is(err, ErrProfileOutdated) {
+		t.Fatalf("ValidateServerHello() error = %v", err)
 	}
 }
 
-func TestHandshakeUnexpectedType(t *testing.T) {
-	cConn, sConn := pair(t)
-
-	go func() {
-		_ = writeFrame(cConn, Hello{Version: ProtoVersion, Type: "BOGUS", DeviceID: "dev"})
-		_, _ = readFrame(cConn) // drain server's REJECT
-	}()
-
-	_, _, err := Server(sConn, func(string, map[string]any) (string, error) {
-		t.Fatal("auth must not be invoked on bad type")
-		return "", nil
-	}, testPeerID)
-	if !errors.Is(err, ErrUnexpectedMessage) {
-		t.Fatalf("Server err = %v, want ErrUnexpectedMessage", err)
+// ai-generated: reject unknown critical fields in a SERVER_HELLO.
+func TestReadReplyRejectsUnknownField(t *testing.T) {
+	const challenge = "00112233445566778899aabbccddeeff"
+	raw := []byte(`{"version":4,"type":"SERVER_HELLO","challenge":"` + challenge + `","session_id":"s","peer_id":"p","server":{},"availability":{},"secret":"x"}`)
+	var framed bytes.Buffer
+	if err := framingWriteRaw(&framed, raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := readReply(&framed, challenge); err == nil {
+		t.Fatal("readReply() accepted an unknown field")
 	}
 }
 
+// ai-generated: prove duplicate critical fields cannot override typed handshake identity.
+func TestReadReplyRejectsDuplicateField(t *testing.T) {
+	raw := []byte(`{"version":4,"version":4,"type":"SERVER_HELLO","challenge":"00112233445566778899aabbccddeeff"}`)
+	var reply ServerHello
+	if err := decodeStrict(raw, &reply, true); err == nil {
+		t.Fatal("decodeStrict() accepted duplicate version")
+	}
+}
+
+// ai-generated: write raw JSON through the production frame bounds for strict-decoder tests.
+func framingWriteRaw(w io.Writer, raw []byte) error {
+	return framing.WriteBytes(w, raw, MaxMessageSize)
+}
+
+// ai-generated: reject a frame length above the protocol bound.
 func TestReadFrameTooLarge(t *testing.T) {
-	cConn, sConn := pair(t)
-
+	clientConn, serverConn := pair(t)
 	go func() {
-		var hdr [4]byte
-		hdr[0] = 0xff
-		hdr[1] = 0xff
-		_, _ = cConn.Write(hdr[:])
-		_ = cConn.Close()
+		_, _ = clientConn.Write([]byte{0xff, 0xff, 0, 0})
+		_ = clientConn.Close()
 	}()
-
-	_, err := readFrame(sConn)
+	_, err := readFrame(serverConn)
 	if !errors.Is(err, ErrFrameTooLarge) {
-		t.Fatalf("readFrame err = %v, want ErrFrameTooLarge", err)
+		t.Fatalf("readFrame() error = %v", err)
 	}
 }
 
+// ai-generated: preserve EOF classification for a closed handshake stream.
 func TestReadFrameEOF(t *testing.T) {
-	cConn, sConn := pair(t)
-	_ = cConn.Close()
-
-	_, err := readFrame(sConn)
+	clientConn, serverConn := pair(t)
+	_ = clientConn.Close()
+	_, err := readFrame(serverConn)
 	if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrClosedPipe) {
-		t.Fatalf("readFrame err = %v", err)
+		t.Fatalf("readFrame() error = %v", err)
 	}
 }

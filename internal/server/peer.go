@@ -350,6 +350,7 @@ func (s *Server) getPeerSession(peerID string) *peerSession {
 	return peer
 }
 
+// ai-generated: compose per-peer routing identity into validated OLC3 server metadata.
 func (s *Server) acceptPeerHandshake(ctx context.Context, peer *peerSession) {
 	const maxStaleRetries = 3
 	_, session := peer.controlPlane()
@@ -366,7 +367,9 @@ func (s *Server) acceptPeerHandshake(ctx context.Context, peer *peerSession) {
 			return
 		}
 		_ = stream.SetDeadline(time.Now().Add(handshake.DefaultTimeout))
-		hello, sessionID, err := handshake.Server(stream, s.authHook, s.localPeerID())
+		helloConfig := s.hello
+		helloConfig.PeerID = s.localPeerID()
+		hello, sessionID, err := handshake.Server(stream, s.authHook, helloConfig)
 		_ = stream.SetDeadline(time.Time{})
 		if err != nil {
 			_ = stream.Close()
@@ -392,6 +395,7 @@ func (s *Server) acceptPeerHandshake(ctx context.Context, peer *peerSession) {
 	}
 }
 
+// ai-generated: serialize notices for peer-mode server control streams.
 func (s *Server) startPeerControlLoop(ctx context.Context, peer *peerSession, stream *smux.Stream) {
 	controlCtx, stop := context.WithCancel(ctx)
 	if !peer.setControl(stream, stop) {
@@ -399,8 +403,10 @@ func (s *Server) startPeerControlLoop(ctx context.Context, peer *peerSession, st
 		_ = stream.Close()
 		return
 	}
+	controlConfig := s.liveness
+	controlConfig.Notices = s.notices
 	runner := tunnelcore.ControlRunner{
-		Transport: s.ln, Config: s.liveness, Health: s.health,
+		Transport: s.ln, Config: controlConfig, Health: s.health,
 		LogFields: func() string { return "role=server peer=" + peer.peerID },
 		OnDeath:   func(error) { s.removePeer(peer, "liveness") },
 	}

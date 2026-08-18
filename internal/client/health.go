@@ -12,6 +12,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/tunnelcore"
 )
 
+// ai-generated: bridge validated control notices into the client callback.
 func (c *Client) startControlLoop(
 	ctx context.Context,
 	cfg Config,
@@ -26,8 +27,14 @@ func (c *Client) startControlLoop(
 	if pingInterval <= 0 {
 		pingInterval = control.DefaultInterval
 	}
+	controlConfig := cfg.Liveness
+	controlConfig.OnNotice = func(notice control.Notice) {
+		if cfg.OnServerNotice != nil {
+			cfg.OnServerNotice(notice)
+		}
+	}
 	runner := tunnelcore.ControlRunner{
-		Transport: c.ln, Config: cfg.Liveness, Health: c.health,
+		Transport: c.ln, Config: controlConfig, Health: c.health,
 		LogFields: func() string {
 			c.sessMu.RLock()
 			defer c.sessMu.RUnlock()

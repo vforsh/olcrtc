@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
@@ -21,12 +22,42 @@ const (
 
 func writeYAML(t *testing.T, body string) string {
 	t.Helper()
+	if strings.Contains(body, "mode: srv") && !strings.Contains(body, "\nserver:") {
+		body += testServerYAML
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "olcrtc.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write yaml: %v", err)
 	}
 	return path
+}
+
+const testServerYAML = `
+server:
+  wire: OLC3
+  build: 0123456789abcdef0123456789abcdef01234567
+  profile_id: c0ffee00-cafe-4000-8000-000000000001
+  current_profile_revision: 2
+  minimum_profile_revision: 1
+  endpoint_id: jitsi-primary
+  capabilities: [server-hello-v1, notice-v1, drain-v1]
+  state: ready
+  reason: none
+`
+
+// ai-generated: add the complete protocol 4 identity to direct CLI test configs.
+func withTestServerIdentity(cfg session.Config) session.Config {
+	cfg.ServerWire = "OLC3"
+	cfg.ServerBuild = "0123456789abcdef0123456789abcdef01234567"
+	cfg.ProfileID = "c0ffee00-cafe-4000-8000-000000000001"
+	cfg.CurrentProfileRevision = 2
+	cfg.MinimumProfileRevision = 1
+	cfg.EndpointID = "jitsi-primary"
+	cfg.ServerCapabilities = [3]string{"server-hello-v1", "notice-v1", "drain-v1"}
+	cfg.ServerState = "ready"
+	cfg.ServerReason = "none"
+	return cfg
 }
 
 func TestRunWithArgsRequiresConfig(t *testing.T) {
@@ -85,13 +116,13 @@ func TestRunGenModeCallsGen(t *testing.T) {
 func TestRunWithConfigRejectsInvalidConfig(t *testing.T) {
 	session.RegisterDefaults()
 
-	scfg := session.Config{
+	scfg := withTestServerIdentity(session.Config{
 		Transport: "datachannel",
 		Provider:  "jitsi",
 		RoomID:    "https://meet.systemli.org/test",
 		KeyHex:    testKeyHex,
 		DNSServer: "8.8.8.8:53",
-	}
+	})
 
 	if err := runWithConfig(loadedConfig{scfg: scfg}); err == nil {
 		t.Fatal("runWithConfig(invalid config) error = nil")
@@ -105,14 +136,14 @@ const testKeyHex = "000000000000000000000000000000000000000000000000000000000000
 func TestRunWithConfigRejectsUnreadableDataOverride(t *testing.T) {
 	session.RegisterDefaults()
 
-	scfg := session.Config{
+	scfg := withTestServerIdentity(session.Config{
 		Mode:      "srv",
 		Transport: "datachannel",
 		Provider:  "jitsi",
 		RoomID:    "https://meet.systemli.org/test",
 		KeyHex:    testKeyHex,
 		DNSServer: "8.8.8.8:53",
-	}
+	})
 
 	err := runWithConfig(loadedConfig{scfg: scfg, dataDir: filepath.Join(t.TempDir(), "missing")})
 	if !errors.Is(err, os.ErrNotExist) {

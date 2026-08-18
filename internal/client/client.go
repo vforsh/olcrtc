@@ -18,6 +18,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/runtime"
@@ -86,6 +87,14 @@ type Client struct {
 // HealthFunc is called when the client control health snapshot changes.
 type HealthFunc func(control.Status)
 
+// ai-generated: expose a callback after strict server identity validation.
+// ServerHelloFunc is called after strict server identity validation.
+type ServerHelloFunc func(handshake.ServerHello)
+
+// ai-generated: expose typed monotonic server control notices.
+// ServerNoticeFunc is called for each valid monotonic control notice.
+type ServerNoticeFunc func(control.Notice)
+
 // Config holds runtime configuration for [Run], [RunWithReady], and [RunWithAddress].
 type Config struct {
 	Transport        string
@@ -109,6 +118,10 @@ type Config struct {
 	DeviceIDPath     string
 	Claims           map[string]any
 	OnHealth         HealthFunc
+	ExpectedServer   handshake.Expectation
+	OnServerHello    ServerHelloFunc
+	OnServerNotice   ServerNoticeFunc
+	OnProviderJoined func()
 }
 
 // Run starts the client with the given configuration.
@@ -125,7 +138,11 @@ func RunWithReady(ctx context.Context, cfg Config, onReady func()) error {
 }
 
 // RunWithAddress starts the client and reports the actual SOCKS listener address.
+// ai-generated: fail before transport startup when server expectations are incomplete.
 func RunWithAddress(ctx context.Context, cfg Config, onReady func(actualAddr string)) error {
+	if err := handshake.ValidateExpectation(cfg.ExpectedServer); err != nil {
+		return fmt.Errorf("server expectation: %w", err)
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	keys, err := tunnelcore.SetupKeySet(cfg.KeyHex, crypto.Client)

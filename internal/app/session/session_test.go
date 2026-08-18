@@ -19,6 +19,20 @@ import (
 
 const testBadDuration = "nope"
 
+// ai-generated: add complete protocol 4 identity to session validation tests.
+func withTestServerIdentity(cfg Config) Config {
+	cfg.ServerWire = "OLC3"
+	cfg.ServerBuild = "0123456789abcdef0123456789abcdef01234567"
+	cfg.ProfileID = "c0ffee00-cafe-4000-8000-000000000001"
+	cfg.CurrentProfileRevision = 2
+	cfg.MinimumProfileRevision = 1
+	cfg.EndpointID = "jitsi-primary"
+	cfg.ServerCapabilities = [3]string{"server-hello-v1", "notice-v1", "drain-v1"}
+	cfg.ServerState = "ready"
+	cfg.ServerReason = "none"
+	return cfg
+}
+
 func TestRegisterDefaultsConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 32 {
@@ -158,14 +172,14 @@ func TestRunWithSessionRotationRestartsAfterMaxDuration(t *testing.T) {
 
 func TestPrepareRunConfigAppliesDefaultsThenValidates(t *testing.T) {
 	RegisterDefaults()
-	cfg, err := prepareRunConfig(Config{
+	cfg, err := prepareRunConfig(withTestServerIdentity(Config{
 		Mode:      ModeSrv,
 		Transport: transportVP8,
 		Provider:  "telemost",
 		RoomID:    "room-1",
 		KeyHex:    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
 		DNSServer: "8.8.8.8:53",
-	})
+	}))
 	if err != nil {
 		t.Fatalf("prepareRunConfig() error = %v", err)
 	}
@@ -186,14 +200,14 @@ func TestPrepareRunConfigAppliesDefaultsThenValidates(t *testing.T) {
 func TestValidate(t *testing.T) {
 	RegisterDefaults()
 
-	base := Config{
+	base := withTestServerIdentity(Config{
 		Mode:      ModeSrv,
 		Transport: "datachannel",
 		Provider:  "telemost",
 		RoomID:    "room-1",
 		KeyHex:    "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
 		DNSServer: "8.8.8.8:53",
-	}
+	})
 
 	tests := []struct {
 		name string

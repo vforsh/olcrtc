@@ -11,6 +11,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/engine"
 	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
+	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/server"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/datachannel"
@@ -137,6 +138,7 @@ func TestRunWithAddressReportsDialableEphemeralListener(t *testing.T) {
 	go func() {
 		serverErr <- server.Run(ctx, server.Config{
 			Transport: "datachannel", Provider: providerName, RoomURL: "room", KeyHex: listenerTestKey,
+			Hello: listenerServerHello(),
 		})
 	}()
 	room.waitConnected(t, 1)
@@ -147,6 +149,7 @@ func TestRunWithAddressReportsDialableEphemeralListener(t *testing.T) {
 		clientErr <- RunWithAddress(ctx, Config{
 			Transport: "datachannel", Provider: providerName, RoomURL: "room", KeyHex: listenerTestKey,
 			LocalAddr: "127.0.0.1:0", DeviceID: "listener-test-client",
+			ExpectedServer: listenerExpectation(),
 		}, func(actualAddr string) { address <- actualAddr })
 	}()
 
@@ -164,6 +167,29 @@ func TestRunWithAddressReportsDialableEphemeralListener(t *testing.T) {
 	cancel()
 	waitListenerRun(t, "client", clientErr)
 	waitListenerRun(t, "server", serverErr)
+}
+
+// ai-generated: construct safe OLC3 identity for listener integration tests.
+func listenerServerHello() handshake.ServerConfig {
+	return handshake.ServerConfig{
+		Metadata: handshake.ServerMetadata{
+			Wire: handshake.ProductWire, Build: "0123456789abcdef0123456789abcdef01234567",
+			ProfileID:              "c0ffee00-cafe-4000-8000-000000000001",
+			CurrentProfileRevision: 1, MinimumProfileRevision: 1,
+			EndpointID: "jitsi-primary", Capabilities: handshake.MandatoryCapabilities,
+		},
+		Availability: handshake.Availability{State: handshake.AvailabilityReady, Reason: handshake.ReasonNone},
+	}
+}
+
+// ai-generated: construct matching client expectations for listener tests.
+func listenerExpectation() handshake.Expectation {
+	config := listenerServerHello()
+	return handshake.Expectation{
+		Wire: config.Metadata.Wire, Build: config.Metadata.Build, ProfileID: config.Metadata.ProfileID,
+		ProfileRevision: 1, EndpointID: config.Metadata.EndpointID,
+		MandatoryCapabilities: config.Metadata.Capabilities,
+	}
 }
 
 func waitListenerAddress(t *testing.T, address <-chan string, clientErr, serverErr <-chan error) string {

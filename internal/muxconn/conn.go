@@ -65,8 +65,8 @@ func (closedReadError) Error() string { return "muxconn: closed (EOF)" }
 func (closedReadError) Unwrap() []error { return []error{io.EOF, ErrClosed} }
 
 const (
-	dataRecordAAD    = "olcrtc/muxconn/v2/data"
-	controlRecordAAD = "olcrtc/muxconn/v2/control"
+	dataRecordAAD    = "olcrtc/muxconn/v3/data"
+	controlRecordAAD = "olcrtc/muxconn/v3/control"
 
 	// inboundQueue is the buffered capacity of the Push -> Read pipeline.
 	// It absorbs short Read stalls without applying back-pressure to the

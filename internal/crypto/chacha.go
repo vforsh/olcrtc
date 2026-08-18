@@ -24,9 +24,9 @@ import (
 )
 
 const (
-	clientToServerLabel = "olcrtc/v2/client-to-server"
-	serverToClientLabel = "olcrtc/v2/server-to-client"
-	recordMagic         = "OLC2"
+	clientToServerLabel = "olcrtc/v3/client-to-server"
+	serverToClientLabel = "olcrtc/v3/server-to-client"
+	recordMagic         = "OLC3"
 	noncePrefixSize     = chacha20poly1305.NonceSizeX - 8
 	recordHeaderSize    = len(recordMagic) + 8 + noncePrefixSize
 	replayWindowSize    = 64
@@ -181,7 +181,7 @@ func (k *KeySet) Seal(plaintext, aad []byte) ([]byte, error) {
 }
 
 // SealInto appends one v2 record to dst. The record layout is:
-// magic "OLC2" | counter uint64 big-endian | sender prefix [16]byte | ciphertext | tag.
+// magic "OLC3" | counter uint64 big-endian | sender prefix [16]byte | ciphertext | tag.
 func (k *KeySet) SealInto(dst, plaintext, aad []byte) ([]byte, error) {
 	counter, err := k.send.nextCounter()
 	if err != nil {
