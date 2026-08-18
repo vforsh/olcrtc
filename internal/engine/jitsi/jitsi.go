@@ -27,9 +27,11 @@ import (
 )
 
 const (
-	defaultNick       = "olcrtc"
-	credentialKeyRoom = "room"
-	maxReconnects     = 5
+	defaultNick                  = "olcrtc"
+	credentialKeyRoom            = "room"
+	maxReconnects                = 5
+	gracefulProviderCloseTimeout = 2 * time.Second
+	forcedProviderCloseWait      = 500 * time.Millisecond
 )
 
 var (
@@ -231,17 +233,29 @@ func (s *Session) Close() error {
 	if pc != nil {
 		_ = pc.Close()
 	}
-	if jSess != nil {
-		_ = jSess.Close()
-	}
-	s.setJSession(nil)
-	s.bridgeReady.Store(false)
-
 	if s.cancel != nil {
 		s.cancel()
 	}
 	s.doneOnce.Do(func() { close(s.done) })
 	s.stopLaunching()
+	if jSess != nil {
+		forced := closeProviderSession(
+			jSess.Close,
+			func() error {
+				if conn := jSess.LowLevel(); conn != nil {
+					return conn.Close()
+				}
+				return nil
+			},
+			gracefulProviderCloseTimeout,
+			forcedProviderCloseWait,
+		)
+		if forced {
+			logger.Warnf("jitsi: graceful provider close exceeded %s; connection forced closed", gracefulProviderCloseTimeout)
+		}
+	}
+	s.setJSession(nil)
+	s.bridgeReady.Store(false)
 
 	stopped := make(chan struct{})
 	go func() {
@@ -253,6 +267,35 @@ func (s *Session) Close() error {
 	case <-time.After(2 * time.Second):
 	}
 	return nil
+}
+
+// ai-generated: bound a provider close handshake and force the underlying connection closed on timeout.
+func closeProviderSession(
+	closeSession func() error,
+	forceClose func() error,
+	gracefulTimeout time.Duration,
+	forcedWait time.Duration,
+) bool {
+	done := make(chan struct{})
+	go func() {
+		_ = closeSession()
+		close(done)
+	}()
+	timer := time.NewTimer(gracefulTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return false
+	case <-timer.C:
+	}
+	_ = forceClose()
+	forcedTimer := time.NewTimer(forcedWait)
+	defer forcedTimer.Stop()
+	select {
+	case <-done:
+	case <-forcedTimer.C:
+	}
+	return true
 }
 
 // ResetPeer clears endpoint and epoch binding after an upper-layer handshake failure.
