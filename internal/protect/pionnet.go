@@ -34,8 +34,10 @@ var ErrUnexpectedConnType = errors.New("protect: unexpected connection type")
 // tunInterfacePrefixes lists interface name prefixes excluded from candidate
 // gathering. Keep pptp explicit; it does not match the ppp prefix.
 //
+// ai-generated: exclude Apple's NetworkExtension tunnel interfaces from ICE candidate gathering.
+//
 //nolint:gochecknoglobals // fixed lookup table; a slice cannot be const
-var tunInterfacePrefixes = []string{"tun", "ppp", "pptp"}
+var tunInterfacePrefixes = []string{"tun", "utun", "ppp", "pptp"}
 
 const (
 	ipNetwork4           = "ip4"

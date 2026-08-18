@@ -17,8 +17,11 @@ func TestIsTunInterface(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]bool{
-		"tun0":   true,
-		"tun":    true,
+		"tun0": true,
+		"tun":  true,
+		// ai-generated: cover Apple's NetworkExtension tunnel interface prefix.
+		"utun0":  true,
+		"utun":   true,
 		"ppp0":   true,
 		"pptp0":  true,
 		"wlan0":  false,
