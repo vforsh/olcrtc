@@ -273,11 +273,12 @@ func (c *Client) retryHandshake(ctx context.Context, cfg Config, cancel context.
 			return
 		}
 		logger.Infof("client reconnect attempt=%d reason=%s", attempt, reason)
-		if c.tryReopenSession(ctx, cfg, cancel, attempt) {
+		if c.attemptReopenSession(ctx, cfg, cancel, attempt) {
 			return
 		}
 		if maxAttempts > 0 && attempt >= maxAttempts {
-			logger.Warnf("client reconnect: exhausted %d handshake attempts (reason=%s) - keeping listener up", attempt, reason)
+			logger.Warnf("client reconnect: exhausted %d handshake attempts (reason=%s) - ending endpoint attempt", attempt, reason)
+			cancel()
 			return
 		}
 		select {
@@ -296,13 +297,23 @@ func (c *Client) retryHandshake(ctx context.Context, cfg Config, cancel context.
 
 func maxHandshakeAttempts(reason string) int {
 	switch reason {
-	case reconnectProvider:
-		return 5
-	case reconnectFallback:
+	case reconnectProvider, reconnectFallback:
 		return 3
 	default:
 		return 0
 	}
+}
+
+func (c *Client) attemptReopenSession(
+	ctx context.Context,
+	cfg Config,
+	cancel context.CancelFunc,
+	attempt int,
+) bool {
+	if c.reopenSession != nil {
+		return c.reopenSession(ctx, cfg, cancel, attempt)
+	}
+	return c.tryReopenSession(ctx, cfg, cancel, attempt)
 }
 
 // ai-generated: require a new OLC3 server hello after provider reconnection.

@@ -83,6 +83,7 @@ type Client struct {
 	shutdownGrace      time.Duration
 	fallbackPending    atomic.Bool
 	notifyControlClose func(*smux.Stream)
+	reopenSession      func(context.Context, Config, context.CancelFunc, int) bool
 }
 
 // HealthFunc is called when the client control health snapshot changes.

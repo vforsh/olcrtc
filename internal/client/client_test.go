@@ -1055,6 +1055,26 @@ func TestLivenessFallbackSkipsWhenSessionIsBack(t *testing.T) {
 	}
 }
 
+func TestReconnectExhaustionEndsEndpointAttempt(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	attempts := 0
+	c := &Client{
+		reopenSession: func(context.Context, Config, context.CancelFunc, int) bool {
+			attempts++
+			return false
+		},
+	}
+
+	c.retryHandshake(ctx, Config{}, cancel, reconnectProvider)
+
+	if attempts != 3 {
+		t.Fatalf("reconnect attempts = %d, want 3", attempts)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("exhausted reconnect attempts did not end the endpoint generation")
+	}
+}
+
 // TestClientLinkAccessIsRaceFree exercises the c.ln readers that used to
 // disagree about locking (resetLinkPeer under sessMu.RLock, notifyLinkHealth
 // and tryReopenSession unlocked) together with the session-state accessors.
