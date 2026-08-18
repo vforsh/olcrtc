@@ -80,7 +80,7 @@ func (c *Client) notifyLinkHealth(unhealthy bool) {
 	}
 }
 
-func (c *Client) shutdown() {
+func (c *Client) shutdown(graceful bool) {
 	c.sessMu.Lock()
 	pair := c.pair
 	controlStream := c.controlStrm
@@ -94,7 +94,13 @@ func (c *Client) shutdown() {
 	c.session, c.controlSess = nil, nil
 	c.conn, c.controlConn = nil, nil
 	c.sessMu.Unlock()
-	tunnelcore.NotifyControlClose(controlStream)
+	if graceful {
+		notifyControlClose := c.notifyControlClose
+		if notifyControlClose == nil {
+			notifyControlClose = tunnelcore.NotifyControlClose
+		}
+		notifyControlClose(controlStream)
+	}
 	if controlStop != nil {
 		controlStop()
 	}

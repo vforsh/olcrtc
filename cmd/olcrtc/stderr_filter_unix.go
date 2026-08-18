@@ -72,7 +72,7 @@ func copyFilteredStderr(reader *os.File, out io.Writer) {
 	for {
 		line, err := br.ReadBytes('\n')
 		if len(line) > 0 && !isNoisyLogLine(line) {
-			if _, writeErr := out.Write(line); writeErr != nil {
+			if _, writeErr := out.Write(redactLogLine(line)); writeErr != nil {
 				return
 			}
 		}

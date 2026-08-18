@@ -341,6 +341,52 @@ func TestConfigureLogging(t *testing.T) {
 	}
 }
 
+func TestConfiguredLogRedactionRemovesEndpointSecrets(t *testing.T) {
+	t.Cleanup(func() { configureLogRedaction(loadedConfig{}) })
+	const (
+		roomSlug = "neutral-meeting-name"
+		roomURL  = "https://meet.example/" + roomSlug
+		token    = "provider-token-value"
+	)
+	cfg := loadedConfig{
+		scfg: session.Config{
+			RoomID: roomURL,
+			KeyHex: testKeyHex,
+			Token:  token,
+		},
+	}
+	configureLogRedaction(cfg)
+
+	line := []byte("room=" + roomURL + " slug=" + roomSlug + " key=" + testKeyHex + " token=" + token)
+	redacted := string(redactLogLine(line))
+	for _, secret := range []string{roomURL, roomSlug, testKeyHex, token} {
+		if strings.Contains(redacted, secret) {
+			t.Fatalf("redacted log contains protected literal %q", secret)
+		}
+	}
+	if count := strings.Count(redacted, "<redacted>"); count != 4 {
+		t.Fatalf("redaction marker count = %d, want 4: %q", count, redacted)
+	}
+}
+
+func TestFilteredWriterReportsOriginalInputLengthAfterRedaction(t *testing.T) {
+	t.Cleanup(func() { configureLogRedaction(loadedConfig{}) })
+	configureLogRedaction(loadedConfig{scfg: session.Config{Token: "long-provider-token"}})
+
+	var output strings.Builder
+	input := []byte("token=long-provider-token\n")
+	n, err := (filteredWriter{w: &output}).Write(input)
+	if err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if n != len(input) {
+		t.Fatalf("Write() length = %d, want %d", n, len(input))
+	}
+	if strings.Contains(output.String(), "long-provider-token") {
+		t.Fatal("filtered output contains protected token")
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

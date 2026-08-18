@@ -67,21 +67,22 @@ type Client struct {
 
 	// controlLastPong is independent corroboration for the transport's fast
 	// peer-restart heuristic, not a second session reconnect detector.
-	controlLastPong  atomic.Value // time.Time
-	deviceID         string
-	sessionID        string
-	claims           map[string]any
-	dnsServer        string
-	socksUser        string
-	socksPass        string
-	sessionReady     chan struct{}
-	wg               sync.WaitGroup
-	socksMu          sync.Mutex
-	socksConns       map[net.Conn]struct{}
-	socksClosed      bool
-	livenessFallback time.Duration
-	shutdownGrace    time.Duration
-	fallbackPending  atomic.Bool
+	controlLastPong    atomic.Value // time.Time
+	deviceID           string
+	sessionID          string
+	claims             map[string]any
+	dnsServer          string
+	socksUser          string
+	socksPass          string
+	sessionReady       chan struct{}
+	wg                 sync.WaitGroup
+	socksMu            sync.Mutex
+	socksConns         map[net.Conn]struct{}
+	socksClosed        bool
+	livenessFallback   time.Duration
+	shutdownGrace      time.Duration
+	fallbackPending    atomic.Bool
+	notifyControlClose func(*smux.Stream)
 }
 
 // HealthFunc is called when the client control health snapshot changes.
@@ -159,8 +160,9 @@ func RunWithAddress(ctx context.Context, cfg Config, onReady func(actualAddr str
 		health: runtime.NewHealthTracker(cfg.OnHealth), sessionReady: make(chan struct{}),
 	}
 	defer func() {
+		graceful := ctx.Err() == nil
 		cancel()
-		client.shutdown()
+		client.shutdown(graceful)
 	}()
 	if bringUpErr := client.bringUpLink(runCtx, cfg, cancel); bringUpErr != nil {
 		return bringUpErr

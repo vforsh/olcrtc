@@ -635,7 +635,7 @@ func TestShutdownClosesLinkAndConn(t *testing.T) {
 		keys: keys,
 		conn: muxconn.New(ln, keys),
 	}
-	c.shutdown()
+	c.shutdown(true)
 	if !ln.closed {
 		t.Fatal("shutdown() did not close link")
 	}
@@ -933,7 +933,7 @@ func TestShutdownWaitsForTrackedGoroutines(t *testing.T) {
 	})
 
 	cancel()
-	c.shutdown()
+	c.shutdown(true)
 	if !finished.Load() {
 		t.Fatal("shutdown() returned before the tracked goroutine finished")
 	}
@@ -950,13 +950,39 @@ func TestShutdownGivesUpOnStuckGoroutine(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		c.shutdown()
+		c.shutdown(true)
 		close(done)
 	}()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("shutdown() hung on a stuck goroutine")
+	}
+}
+
+func TestShutdownSkipsControlCloseAfterExternalCancellation(t *testing.T) {
+	called := false
+	c := &Client{
+		notifyControlClose: func(*smux.Stream) { called = true },
+	}
+
+	c.shutdown(false)
+
+	if called {
+		t.Fatal("shutdown(false) sent a graceful control close")
+	}
+}
+
+func TestShutdownNotifiesControlCloseOnGracefulExit(t *testing.T) {
+	called := false
+	c := &Client{
+		notifyControlClose: func(*smux.Stream) { called = true },
+	}
+
+	c.shutdown(true)
+
+	if !called {
+		t.Fatal("shutdown(true) did not send a graceful control close")
 	}
 }
 

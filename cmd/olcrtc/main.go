@@ -12,9 +12,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -91,6 +95,7 @@ func runWithArgs(args []string) error {
 	if err != nil {
 		return err
 	}
+	configureLogRedaction(cfg)
 
 	return runWithConfig(cfg)
 }
@@ -350,6 +355,67 @@ var noisyPrefixes = [][]byte{ //nolint:gochecknoglobals // package-level filter 
 	[]byte("turnc"), []byte("[turn]"), []byte("Fail to refresh permissions"),
 }
 
+var logRedaction = struct { //nolint:gochecknoglobals // process-wide output boundary
+	sync.RWMutex
+	literals [][]byte
+}{}
+
+func configureLogRedaction(cfg loadedConfig) {
+	seen := make(map[string]struct{})
+	add := func(value string) {
+		if value == "" {
+			return
+		}
+		seen[value] = struct{}{}
+	}
+	addConfig := func(scfg session.Config) {
+		add(scfg.RoomID)
+		add(scfg.KeyHex)
+		add(scfg.ProviderToken)
+		add(scfg.Token)
+		add(scfg.SOCKSUser)
+		add(scfg.SOCKSPass)
+		add(scfg.SOCKSProxyUser)
+		add(scfg.SOCKSProxyPass)
+
+		parsed, err := url.Parse(scfg.RoomID)
+		if err != nil {
+			return
+		}
+		roomPath := strings.Trim(parsed.Path, "/")
+		add(roomPath)
+		if separator := strings.LastIndexByte(roomPath, '/'); separator >= 0 {
+			add(roomPath[separator+1:])
+		}
+	}
+
+	addConfig(cfg.scfg)
+	for _, profile := range cfg.profiles {
+		addConfig(profile.Config)
+	}
+
+	literals := make([][]byte, 0, len(seen))
+	for literal := range seen {
+		literals = append(literals, []byte(literal))
+	}
+	sort.Slice(literals, func(i, j int) bool { return len(literals[i]) > len(literals[j]) })
+
+	logRedaction.Lock()
+	logRedaction.literals = literals
+	logRedaction.Unlock()
+}
+
+func redactLogLine(line []byte) []byte {
+	logRedaction.RLock()
+	defer logRedaction.RUnlock()
+
+	redacted := append([]byte(nil), line...)
+	for _, literal := range logRedaction.literals {
+		redacted = bytes.ReplaceAll(redacted, literal, []byte("<redacted>"))
+	}
+	return redacted
+}
+
 // filteredWriter wraps an io.Writer and drops lines matching noisyPrefixes.
 type filteredWriter struct{ w io.Writer }
 
@@ -358,12 +424,16 @@ func (f filteredWriter) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 
-	n, err := f.w.Write(p)
+	redacted := redactLogLine(p)
+	n, err := f.w.Write(redacted)
 	if err != nil {
-		return n, fmt.Errorf("log write: %w", err)
+		return 0, fmt.Errorf("log write: %w", err)
+	}
+	if n != len(redacted) {
+		return 0, io.ErrShortWrite
 	}
 
-	return n, nil
+	return len(p), nil
 }
 
 func isNoisyLogLine(line []byte) bool {
