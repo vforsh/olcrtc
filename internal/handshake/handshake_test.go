@@ -5,11 +5,27 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/openlibrecommunity/olcrtc/internal/framing"
 )
+
+// ai-generated: parse the cross-language golden SERVER_HELLO through the production strict decoder.
+func TestGoldenServerHelloFixture(t *testing.T) {
+	raw, err := os.ReadFile("../../testdata/olc3/server_hello.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hello ServerHello
+	if err = decodeStrict(raw, &hello, true); err != nil {
+		t.Fatal(err)
+	}
+	if hello.Version != ProtoVersion || hello.Type != TypeServerHello || hello.Server.Wire != ProductWire {
+		t.Fatalf("golden hello = %#v", hello)
+	}
+}
 
 const (
 	testSessionID = "sess-42"

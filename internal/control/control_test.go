@@ -6,9 +6,32 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 )
+
+// ai-generated: parse the cross-language golden CONTROL_NOTICE through the production strict decoder.
+func TestGoldenControlNoticeFixture(t *testing.T) {
+	raw, err := os.ReadFile("../../testdata/olc3/control_notice.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := parseMessage(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notice := Notice{
+		Sequence: message.Sequence, State: message.State, Reason: message.Reason,
+		RetryAfterSeconds: message.RetryAfterSeconds,
+	}
+	if err = validateNotice(notice); err != nil {
+		t.Fatal(err)
+	}
+	if notice.Sequence != 7 || notice.State != NoticeDraining || notice.Reason != NoticeReasonMaintenance {
+		t.Fatalf("golden notice = %#v", notice)
+	}
+}
 
 func controlPair(t *testing.T) (net.Conn, net.Conn) {
 	t.Helper()
