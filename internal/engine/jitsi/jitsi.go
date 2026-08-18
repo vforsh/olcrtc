@@ -30,8 +30,9 @@ const (
 	defaultNick                  = "olcrtc"
 	credentialKeyRoom            = "room"
 	maxReconnects                = 5
-	gracefulProviderCloseTimeout = 2 * time.Second
-	forcedProviderCloseWait      = 500 * time.Millisecond
+	gracefulProviderCloseTimeout = time.Second
+	forcedProviderCloseWait      = 250 * time.Millisecond
+	providerGoroutineCloseWait   = 750 * time.Millisecond
 )
 
 var (
@@ -264,7 +265,7 @@ func (s *Session) Close() error {
 	}()
 	select {
 	case <-stopped:
-	case <-time.After(2 * time.Second):
+	case <-time.After(providerGoroutineCloseWait):
 	}
 	return nil
 }

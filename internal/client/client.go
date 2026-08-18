@@ -47,7 +47,7 @@ const (
 
 const (
 	defaultLivenessFallback = 30 * time.Second
-	defaultShutdownGrace    = 5 * time.Second
+	defaultShutdownGrace    = 1500 * time.Millisecond
 )
 
 // Client handles local SOCKS5 connections and tunnels them to the server.
