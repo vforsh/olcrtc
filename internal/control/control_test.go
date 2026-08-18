@@ -255,3 +255,20 @@ func TestParseMessageRejectsMalformedNotice(t *testing.T) {
 		}
 	}
 }
+
+// ai-generated: fuzz the production control decoder and typed notice validator.
+func FuzzParseControlMessage(f *testing.F) {
+	f.Add([]byte(`{"version":2,"type":"CONTROL_NOTICE","sequence":1,"state":"draining","reason":"maintenance","retry_after_seconds":30}`))
+	f.Add([]byte(`{"version":2,"type":"CONTROL_NOTICE","sequence":1,"sequence":2}`))
+	f.Add([]byte(`{}`))
+	f.Fuzz(func(_ *testing.T, raw []byte) {
+		message, err := parseMessage(raw)
+		if err != nil || message.Type != TypeNotice {
+			return
+		}
+		_ = validateNotice(Notice{
+			Sequence: message.Sequence, State: message.State, Reason: message.Reason,
+			RetryAfterSeconds: message.RetryAfterSeconds,
+		})
+	})
+}

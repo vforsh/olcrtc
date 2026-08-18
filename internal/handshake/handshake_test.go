@@ -195,3 +195,14 @@ func TestReadFrameEOF(t *testing.T) {
 		t.Fatalf("readFrame() error = %v", err)
 	}
 }
+
+// ai-generated: fuzz the production strict SERVER_HELLO decoder for malformed and ambiguous JSON.
+func FuzzDecodeStrictServerHello(f *testing.F) {
+	f.Add([]byte(`{"version":4,"type":"SERVER_HELLO","challenge":"00112233445566778899aabbccddeeff","session_id":"s","peer_id":"p","server":{"wire":"OLC3"},"availability":{"state":"ready","reason":"none"}}`))
+	f.Add([]byte(`{"version":4,"version":3,"type":"SERVER_HELLO"}`))
+	f.Add([]byte(`{}`))
+	f.Fuzz(func(_ *testing.T, raw []byte) {
+		var hello ServerHello
+		_ = decodeStrict(raw, &hello, true)
+	})
+}
