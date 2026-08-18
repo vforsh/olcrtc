@@ -34,6 +34,10 @@ Ping, pong и close сохраняют прежнюю семантику, но �
 
 `sequence` строго возрастает. Состояния: `ready`, `draining`, `unavailable`.
 Причины: `none`, `maintenance`, `overloaded`, `retiring`, `incompatible`.
+
+CLI-сервер ставит `draining/retiring` в очередь по `SIGUSR1`, а
+`unavailable/maintenance` по `SIGUSR2`. Остановка остаётся на `SIGTERM`.
+Сигналы не несут строк или секретов; порядковый номер назначает сам процесс.
 `retry_after_seconds` находится в диапазоне 0…86400. После `unavailable`
 возврат к другому состоянию в той же сессии запрещён. Очередь ping/pong имеет
 приоритет над уведомлениями, чтобы уведомления не ломали проверку живости.

@@ -93,6 +93,7 @@ func runServer(
 			Metadata:     serverMetadata(cfg),
 			Availability: serverAvailability(cfg),
 		},
+		Notices: cfg.Notices,
 		OnSessionOpen: func(sessionID, deviceID string, claims map[string]any) {
 			logger.Infof("session opened: id=%s device=%s claims=%v", sessionID, deviceID, claims)
 		},

@@ -23,6 +23,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	configpkg "github.com/openlibrecommunity/olcrtc/internal/config"
+	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/supervisor"
@@ -185,9 +186,16 @@ func runSessionMode(dataDir string, scfg session.Config) error {
 		return err
 	}
 
-	return runManaged(func(ctx context.Context) error {
+	// ai-generated: expose a signal-driven typed drain source only for server mode.
+	var notices chan control.Notice
+	if scfg.Mode == session.ModeSrv {
+		notices = make(chan control.Notice, 2)
+		scfg.Notices = notices
+	}
+
+	return runManagedWithNotices(func(ctx context.Context) error {
 		return runSession(ctx, scfg)
-	})
+	}, notices)
 }
 
 func runFailoverSessionMode(dataDir string, profiles []supervisor.Profile, failover failoverConfig) error {
@@ -262,11 +270,19 @@ func formatProfileStatuses(profiles []supervisor.ProfileStatus) string {
 }
 
 func runManaged(run func(context.Context) error) error {
+	return runManagedWithNotices(run, nil)
+}
+
+// ai-generated: keep shutdown signals and typed availability signals in one serialized CLI loop.
+func runManagedWithNotices(run func(context.Context) error, notices chan<- control.Notice) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	if notices != nil {
+		signal.Notify(sigCh, syscall.SIGUSR1, syscall.SIGUSR2)
+	}
 
 	defer signal.Stop(sigCh)
 
@@ -276,14 +292,46 @@ func runManaged(run func(context.Context) error) error {
 		errCh <- run(ctx)
 	}()
 
-	select {
-	case <-sigCh:
-		logger.Info("Shutting down gracefully...")
-		cancel()
+	var noticeSequence uint64
+	for {
+		select {
+		case sig := <-sigCh:
+			notice, ok := noticeForSignal(sig, noticeSequence+1)
+			if ok && notices != nil {
+				noticeSequence++
+				select {
+				case notices <- notice:
+					logger.Info("Queued typed server availability notice")
+				default:
+					logger.Warn("Typed server availability notice queue is full")
+				}
+				continue
+			}
+			logger.Info("Shutting down gracefully...")
+			cancel()
 
-		return waitForShutdown(errCh)
-	case err := <-errCh:
-		return err
+			return waitForShutdown(errCh)
+		case err := <-errCh:
+			return err
+		}
+	}
+}
+
+// ai-generated: map operator signals to finite secret-free control notices.
+func noticeForSignal(received os.Signal, sequence uint64) (control.Notice, bool) {
+	switch received {
+	case syscall.SIGUSR1:
+		return control.Notice{
+			Sequence: sequence, State: control.NoticeDraining,
+			Reason: control.NoticeReasonRetiring, RetryAfterSeconds: 300,
+		}, true
+	case syscall.SIGUSR2:
+		return control.Notice{
+			Sequence: sequence, State: control.NoticeUnavailable,
+			Reason: control.NoticeReasonMaintenance, RetryAfterSeconds: 300,
+		}, true
+	default:
+		return control.Notice{}, false
 	}
 }
 

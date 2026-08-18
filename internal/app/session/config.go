@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 
+	"github.com/openlibrecommunity/olcrtc/internal/control"
 	enginebuiltin "github.com/openlibrecommunity/olcrtc/internal/engine/builtin"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 	"github.com/openlibrecommunity/olcrtc/internal/transport/datachannel"
@@ -165,6 +166,7 @@ type Config struct {
 	ServerCapabilities     [3]string
 	ServerState            string
 	ServerReason           string
+	Notices                <-chan control.Notice
 	Amount                 int
 }
 

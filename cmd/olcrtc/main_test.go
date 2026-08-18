@@ -6,12 +6,28 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
+	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/supervisor"
 )
+
+// ai-generated: prove the CLI exposes finite drain and unavailable signals without free-form text.
+func TestNoticeForSignal(t *testing.T) {
+	drain, ok := noticeForSignal(syscall.SIGUSR1, 7)
+	if !ok || drain.Sequence != 7 || drain.State != control.NoticeDraining ||
+		drain.Reason != control.NoticeReasonRetiring {
+		t.Fatalf("drain notice = %#v, %v", drain, ok)
+	}
+	unavailable, ok := noticeForSignal(syscall.SIGUSR2, 8)
+	if !ok || unavailable.State != control.NoticeUnavailable ||
+		unavailable.Reason != control.NoticeReasonMaintenance {
+		t.Fatalf("unavailable notice = %#v, %v", unavailable, ok)
+	}
+}
 
 var errBoom = errors.New("boom")
 
