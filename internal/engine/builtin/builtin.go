@@ -43,6 +43,7 @@ type Config struct {
 	OnPeerData          func(peerID string, data []byte)
 	DNSServer           string
 	Resolver            *net.Resolver
+	InterfaceName       string
 	ProxyAddr           string
 	ProxyPort           int
 	RequireTargetedPeer bool
@@ -135,6 +136,7 @@ func register(name string, provider auth.Provider) {
 			OnPeerData:          cfg.OnPeerData,
 			DNSServer:           cfg.DNSServer,
 			Resolver:            cfg.Resolver,
+			InterfaceName:       cfg.InterfaceName,
 			ProxyAddr:           cfg.ProxyAddr,
 			ProxyPort:           cfg.ProxyPort,
 			RequireTargetedPeer: cfg.RequireTargetedPeer,
@@ -166,13 +168,14 @@ func resolveCredentials(
 	}
 
 	authCfg := auth.Config{
-		RoomURL:   cfg.RoomURL,
-		Name:      cfg.Name,
-		Token:     cfg.ProviderToken,
-		DNSServer: cfg.DNSServer,
-		Resolver:  cfg.Resolver,
-		ProxyAddr: cfg.ProxyAddr,
-		ProxyPort: cfg.ProxyPort,
+		RoomURL:       cfg.RoomURL,
+		Name:          cfg.Name,
+		Token:         cfg.ProviderToken,
+		DNSServer:     cfg.DNSServer,
+		Resolver:      cfg.Resolver,
+		InterfaceName: cfg.InterfaceName,
+		ProxyAddr:     cfg.ProxyAddr,
+		ProxyPort:     cfg.ProxyPort,
 	}
 
 	issue := func(ctx context.Context) (engine.Credentials, error) {

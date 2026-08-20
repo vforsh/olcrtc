@@ -111,6 +111,7 @@ type Config struct {
 	KeyHex           string
 	DNSServer        string
 	Resolver         *net.Resolver
+	InterfaceName    string
 	SOCKSProxyAddr   string
 	SOCKSProxyPort   int
 	SOCKSProxyUser   string
@@ -156,7 +157,8 @@ func toServerConfig(cfg Config) server.Config {
 		Transport: cfg.Transport, Provider: cfg.Provider, RoomURL: cfg.RoomURL,
 		ChannelID: cfg.ChannelID, Engine: cfg.Engine, URL: cfg.URL, Token: cfg.Token,
 		ProviderToken: cfg.ProviderToken, KeyHex: cfg.KeyHex, DNSServer: cfg.DNSServer,
-		Resolver: cfg.Resolver, SOCKSProxyAddr: cfg.SOCKSProxyAddr,
+		Resolver: cfg.Resolver, InterfaceName: cfg.InterfaceName,
+		SOCKSProxyAddr: cfg.SOCKSProxyAddr,
 		SOCKSProxyPort: cfg.SOCKSProxyPort, SOCKSProxyUser: cfg.SOCKSProxyUser,
 		SOCKSProxyPass: cfg.SOCKSProxyPass, TransportOptions: toTransportOptions(cfg.TransportOptions),
 		Liveness: control.Config{

@@ -51,10 +51,11 @@ type Config struct {
 	// Empty means the provider falls back to its default (guest) flow.
 	Token string
 	// DNSServer / ProxyAddr / ProxyPort are network knobs for outbound HTTP.
-	DNSServer string
-	Resolver  *net.Resolver
-	ProxyAddr string
-	ProxyPort int
+	DNSServer     string
+	Resolver      *net.Resolver
+	InterfaceName string
+	ProxyAddr     string
+	ProxyPort     int
 }
 
 // Provider produces engine credentials.

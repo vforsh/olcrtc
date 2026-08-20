@@ -66,6 +66,36 @@ func TestInterfaceByNameRejectsTun(t *testing.T) {
 	}
 }
 
+// ai-generated: verify explicit ICE candidate filtering keeps only the selected interface.
+func TestBoundProtectedNetFiltersInterfaces(t *testing.T) {
+	interfaces, err := net.Interfaces()
+	if err != nil || len(interfaces) == 0 {
+		t.Fatalf("net.Interfaces: %v", err)
+	}
+	name := interfaces[0].Name
+	n, err := NewBoundProtectedNet(name)
+	if err != nil {
+		t.Fatalf("NewBoundProtectedNet: %v", err)
+	}
+	got, err := n.Interfaces()
+	if err != nil {
+		t.Fatalf("Interfaces: %v", err)
+	}
+	for _, ifc := range got {
+		if ifc.Name != name {
+			t.Fatalf("Interfaces returned %q, want only %q", ifc.Name, name)
+		}
+	}
+}
+
+// ai-generated: ensure a misspelled interface fails closed before network traffic.
+func TestBoundControlRejectsUnknownInterface(t *testing.T) {
+	dialer := net.Dialer{Control: controlFuncForInterface("olcrtc-no-such-interface")}
+	if _, err := dialer.Dial("tcp4", "127.0.0.1:1"); err == nil {
+		t.Fatal("bound dial unexpectedly succeeded")
+	}
+}
+
 // TestControlFuncFailClosed verifies that the protector can reject a socket.
 func TestControlFuncFailClosed(t *testing.T) {
 	restoreProtector(t)

@@ -104,6 +104,7 @@ type Crypto struct {
 type Net struct {
 	Transport string `yaml:"transport"` // datachannel, videochannel, seichannel, vp8channel
 	DNS       string `yaml:"dns"`
+	Interface string `yaml:"interface"`
 }
 
 // SOCKS bundles SOCKS5 listener and outbound-proxy settings.
@@ -302,6 +303,7 @@ func ApplyProfile(base session.Config, profile Profile) session.Config {
 func ApplySettings(dst session.Config, s Settings) session.Config {
 	dst.Transport = overlay(dst.Transport, s.Net.Transport)
 	dst.DNSServer = overlay(dst.DNSServer, s.Net.DNS)
+	dst.InterfaceName = overlay(dst.InterfaceName, s.Net.Interface)
 
 	dst.Provider = overlay(dst.Provider, s.Auth.Provider)
 	dst.ProviderToken = overlay(dst.ProviderToken, s.Auth.Token)

@@ -60,20 +60,31 @@ func HasProtector() bool {
 }
 
 func controlFunc(network, _ string, c syscall.RawConn) error {
-	current := protector.Load()
-	if current == nil {
-		return nil
-	}
-	var err error
-	controlErr := c.Control(func(fd uintptr) {
-		if !current.protect(int(fd)) {
-			err = &net.OpError{Op: "protect", Net: network, Err: net.ErrClosed}
+	return controlFuncForInterface("")(network, "", c)
+}
+
+// ai-generated: combine Android VPN protection with optional interface binding.
+func controlFuncForInterface(interfaceName string) func(string, string, syscall.RawConn) error {
+	return func(network, _ string, c syscall.RawConn) error {
+		current := protector.Load()
+		if current == nil && interfaceName == "" {
+			return nil
 		}
-	})
-	if controlErr != nil {
-		return fmt.Errorf("control failed: %w", controlErr)
+		var err error
+		controlErr := c.Control(func(fd uintptr) {
+			if current != nil && !current.protect(int(fd)) {
+				err = &net.OpError{Op: "protect", Net: network, Err: net.ErrClosed}
+				return
+			}
+			if interfaceName != "" {
+				err = bindSocketToInterface(int(fd), interfaceName)
+			}
+		})
+		if controlErr != nil {
+			return fmt.Errorf("control failed: %w", controlErr)
+		}
+		return err
 	}
-	return err
 }
 
 // newDialer returns a net.Dialer that protects each new socket.
@@ -83,23 +94,34 @@ func newDialer() *net.Dialer {
 
 // newDialerWithResolver returns a protected dialer using resolver for DNS.
 func newDialerWithResolver(resolver *net.Resolver) *net.Dialer {
+	return newBoundDialer(resolver, "")
+}
+
+// ai-generated: construct a dialer whose sockets use one named interface.
+func newBoundDialer(resolver *net.Resolver, interfaceName string) *net.Dialer {
 	return &net.Dialer{
 		Timeout:   defaultDialTimeout,
 		KeepAlive: defaultKeepAlive,
-		Control:   controlFunc,
+		Control:   controlFuncForInterface(interfaceName),
 		Resolver:  resolver,
 	}
 }
 
 // NewResolver returns a local Go resolver that sends queries to dnsServer.
 func NewResolver(dnsServer string) *net.Resolver {
+	return NewBoundResolver(dnsServer, "")
+}
+
+// NewBoundResolver returns a resolver whose DNS sockets use interfaceName.
+// ai-generated: bind explicit DNS traffic without changing the process default resolver.
+func NewBoundResolver(dnsServer, interfaceName string) *net.Resolver {
 	if dnsServer == "" {
 		return nil
 	}
 	return &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			dialer := net.Dialer{Timeout: 3 * time.Second, Control: controlFunc}
+			dialer := net.Dialer{Timeout: 3 * time.Second, Control: controlFuncForInterface(interfaceName)}
 			return dialer.DialContext(ctx, network, dnsServer)
 		},
 	}
@@ -127,8 +149,17 @@ func newHTTPTransport(resolvers ...*net.Resolver) *http.Transport {
 
 // NewHTTPClient returns an http.Client using protected sockets with DNS retry.
 func NewHTTPClient(resolvers ...*net.Resolver) *http.Client {
+	return NewBoundHTTPClient("", resolvers...)
+}
+
+// NewBoundHTTPClient returns an HTTP client whose sockets use interfaceName.
+// ai-generated: bind provider HTTP and WebSocket transports to one interface.
+func NewBoundHTTPClient(interfaceName string, resolvers ...*net.Resolver) *http.Client {
+	dialer := newBoundDialer(firstResolver(resolvers), interfaceName)
+	transport := newHTTPTransport(resolvers...)
+	transport.DialContext = dialer.DialContext
 	return &http.Client{
-		Transport: &retryTransport{base: newHTTPTransport(resolvers...)},
+		Transport: &retryTransport{base: transport},
 		Timeout:   defaultHTTPClientTimeout,
 	}
 }
@@ -249,12 +280,13 @@ func redactSensitive(text string) string {
 
 // ProxyDialer implements golang.org/x/net/proxy.Dialer for pion ICE.
 type ProxyDialer struct {
-	resolver *net.Resolver
+	resolver      *net.Resolver
+	interfaceName string
 }
 
 // Dial connects to the address on the named network using a protected socket.
 func (d *ProxyDialer) Dial(network, addr string) (net.Conn, error) {
-	conn, err := newDialerWithResolver(d.resolver).Dial(network, addr)
+	conn, err := newBoundDialer(d.resolver, d.interfaceName).Dial(network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("dial failed: %w", err)
 	}
@@ -264,6 +296,12 @@ func (d *ProxyDialer) Dial(network, addr string) (net.Conn, error) {
 // NewProxyDialer returns a proxy.Dialer that protects ICE sockets.
 func NewProxyDialer(resolvers ...*net.Resolver) *ProxyDialer {
 	return &ProxyDialer{resolver: firstResolver(resolvers)}
+}
+
+// NewBoundProxyDialer returns an ICE proxy dialer bound to interfaceName.
+// ai-generated: bind ICE TCP fallback sockets to one interface.
+func NewBoundProxyDialer(interfaceName string, resolvers ...*net.Resolver) *ProxyDialer {
+	return &ProxyDialer{resolver: firstResolver(resolvers), interfaceName: interfaceName}
 }
 
 func firstResolver(resolvers []*net.Resolver) *net.Resolver {

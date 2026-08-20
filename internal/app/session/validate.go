@@ -92,6 +92,11 @@ func validateCommon(cfg Config) error {
 	if cfg.DNSServer == "" && cfg.Resolver == nil {
 		return ErrDNSServerRequired
 	}
+	if cfg.InterfaceName != "" {
+		if _, err := net.InterfaceByName(cfg.InterfaceName); err != nil {
+			return fmt.Errorf("%w: %s", ErrInterfaceNotFound, cfg.InterfaceName)
+		}
+	}
 	return nil
 }
 

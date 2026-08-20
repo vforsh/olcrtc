@@ -108,6 +108,7 @@ type Config struct {
 	SOCKSPass        string
 	DNSServer        string
 	Resolver         *net.Resolver
+	InterfaceName    string
 	TransportOptions TransportOptions
 	Liveness         LivenessConfig
 	Traffic          TrafficConfig
@@ -163,7 +164,8 @@ func toClientConfig(cfg Config) internalclient.Config {
 		ChannelID: cfg.ChannelID, Engine: cfg.Engine, URL: cfg.URL, Token: cfg.Token,
 		ProviderToken: cfg.ProviderToken, KeyHex: cfg.KeyHex, LocalAddr: cfg.LocalAddr,
 		SOCKSUser: cfg.SOCKSUser, SOCKSPass: cfg.SOCKSPass, DNSServer: cfg.DNSServer,
-		Resolver: cfg.Resolver, TransportOptions: toTransportOptions(cfg.TransportOptions),
+		Resolver: cfg.Resolver, InterfaceName: cfg.InterfaceName,
+		TransportOptions: toTransportOptions(cfg.TransportOptions),
 		Liveness: control.Config{
 			Interval: cfg.Liveness.Interval, Timeout: cfg.Liveness.Timeout, Failures: cfg.Liveness.Failures,
 		},

@@ -19,6 +19,7 @@ type PionSettingsOptions struct {
 	IPv4Only         bool
 	ProxyDialer      bool
 	DisableMulticast bool
+	InterfaceName    string
 }
 
 // PionSettings applies shared network settings to a pion SettingEngine.
@@ -26,11 +27,12 @@ type PionSettings func(*webrtc.SettingEngine)
 
 // NewPionSettings prepares protected networking and per-engine pion settings.
 func NewPionSettings(opts PionSettingsOptions) (PionSettings, error) {
-	useProtectedNet := protect.HasProtector() || opts.Resolver != nil || runtime.GOOS == "android"
+	useProtectedNet := protect.HasProtector() || opts.Resolver != nil ||
+		opts.InterfaceName != "" || runtime.GOOS == "android"
 	var protectedNet *protect.ProtectedNet
 	if useProtectedNet {
 		var err error
-		protectedNet, err = protect.NewProtectedNet(opts.Resolver)
+		protectedNet, err = protect.NewBoundProtectedNet(opts.InterfaceName, opts.Resolver)
 		if err != nil {
 			return nil, fmt.Errorf("protected net: %w", err)
 		}
@@ -52,7 +54,7 @@ func NewPionSettings(opts PionSettingsOptions) (PionSettings, error) {
 		}
 		settings.SetNet(protectedNet)
 		if opts.ProxyDialer {
-			settings.SetICEProxyDialer(protect.NewProxyDialer(opts.Resolver))
+			settings.SetICEProxyDialer(protect.NewBoundProxyDialer(opts.InterfaceName, opts.Resolver))
 		}
 		if opts.DisableMulticast {
 			settings.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)

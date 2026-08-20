@@ -24,6 +24,7 @@ func TestConfigMapping(t *testing.T) {
 		Engine: "livekit", URL: "wss://example", Token: "engine-token",
 		ProviderToken: "provider-token", KeyHex: "key", LocalAddr: "127.0.0.1:1080",
 		SOCKSUser: "user", SOCKSPass: "pass", DNSServer: "dns", Resolver: resolver,
+		InterfaceName:    "en1",
 		TransportOptions: options,
 		Liveness:         LivenessConfig{Interval: time.Second, Timeout: 2 * time.Second, Failures: 3},
 		Traffic:          TrafficConfig{MaxPayloadSize: 4096, MinDelay: time.Millisecond, MaxDelay: 2 * time.Millisecond},
@@ -40,7 +41,7 @@ func TestConfigMapping(t *testing.T) {
 		got.ChannelID != "channel" || got.Engine != "livekit" || got.URL != "wss://example" ||
 		got.Token != "engine-token" || got.ProviderToken != "provider-token" || got.KeyHex != "key" ||
 		got.LocalAddr != "127.0.0.1:1080" || got.SOCKSUser != "user" || got.SOCKSPass != "pass" ||
-		got.DNSServer != "dns" || got.Resolver != resolver || got.DeviceID != "device" ||
+		got.DNSServer != "dns" || got.Resolver != resolver || got.InterfaceName != "en1" || got.DeviceID != "device" ||
 		got.DeviceIDPath != "/tmp/device" || got.Claims["role"] != "client" {
 		t.Fatalf("scalar mapping = %#v", got)
 	}

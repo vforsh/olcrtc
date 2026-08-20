@@ -57,11 +57,12 @@ type Session struct {
 	engine.Reconnector
 	engine.VideoTrackState
 
-	host       string
-	room       string
-	name       string
-	resolver   *net.Resolver
-	httpClient *http.Client
+	host          string
+	room          string
+	name          string
+	resolver      *net.Resolver
+	interfaceName string
+	httpClient    *http.Client
 
 	onData              func([]byte)
 	onPeerData          func(peerID string, data []byte)
@@ -127,7 +128,8 @@ func New(_ context.Context, cfg engine.Config) (engine.Session, error) {
 		room:                room,
 		name:                name,
 		resolver:            cfg.Resolver,
-		httpClient:          protect.NewHTTPClient(cfg.Resolver),
+		interfaceName:       cfg.InterfaceName,
+		httpClient:          protect.NewBoundHTTPClient(cfg.InterfaceName, cfg.Resolver),
 		onData:              cfg.OnData,
 		onPeerData:          cfg.OnPeerData,
 		requireTargetedPeer: cfg.RequireTargetedPeer,

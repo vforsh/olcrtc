@@ -113,13 +113,14 @@ func (s *Session) shouldRequestVideo() bool {
 }
 
 // newSettingEngine builds the pion settings shared with the other engines.
-func newSettingEngine(resolver *net.Resolver) (webrtc.SettingEngine, error) {
+func newSettingEngine(resolver *net.Resolver, interfaceName string) (webrtc.SettingEngine, error) {
 	settings := webrtc.SettingEngine{}
 	apply, err := engine.NewPionSettings(engine.PionSettingsOptions{
 		Resolver:         resolver,
 		LoggerFactory:    logger.NewPionLoggerFactory(),
 		IPv4Only:         true,
 		DisableMulticast: true,
+		InterfaceName:    interfaceName,
 	})
 	if err != nil {
 		return settings, err //nolint:wrapcheck // shared builder adds protected-net context
@@ -128,8 +129,8 @@ func newSettingEngine(resolver *net.Resolver) (webrtc.SettingEngine, error) {
 	return settings, nil
 }
 
-func newConferenceAPI(resolver *net.Resolver) (*webrtc.API, error) {
-	settings, err := newSettingEngine(resolver)
+func newConferenceAPI(resolver *net.Resolver, interfaceName string) (*webrtc.API, error) {
+	settings, err := newSettingEngine(resolver, interfaceName)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +172,7 @@ func (s *Session) negotiatePC(ctx context.Context, jSess *j.Session, sctpBridge 
 }
 
 func (s *Session) newConferencePeerConnection(jSess *j.Session) (*webrtc.PeerConnection, error) {
-	api, err := newConferenceAPI(s.resolver)
+	api, err := newConferenceAPI(s.resolver, s.interfaceName)
 	if err != nil {
 		return nil, err
 	}

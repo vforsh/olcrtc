@@ -43,16 +43,17 @@ type Credentials struct {
 // peerID/credentials tuple from the room-info HTTP endpoint). Engines that
 // don't need this should ignore it.
 type Config struct {
-	URL        string
-	Token      string
-	Name       string
-	Extra      map[string]string
-	OnData     func([]byte)
-	OnPeerData func(peerID string, data []byte)
-	DNSServer  string
-	Resolver   *net.Resolver
-	ProxyAddr  string
-	ProxyPort  int
+	URL           string
+	Token         string
+	Name          string
+	Extra         map[string]string
+	OnData        func([]byte)
+	OnPeerData    func(peerID string, data []byte)
+	DNSServer     string
+	Resolver      *net.Resolver
+	InterfaceName string
+	ProxyAddr     string
+	ProxyPort     int
 	// RequireTargetedPeer asks engines that multiplex room-wide messages to
 	// ignore single-peer broadcast frames until the remote has addressed this
 	// session's local epoch.

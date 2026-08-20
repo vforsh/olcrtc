@@ -203,6 +203,7 @@ type Config struct {
 	OnPeerData    func(peerID string, data []byte)
 	DNSServer     string
 	Resolver      *net.Resolver
+	InterfaceName string
 	ProxyAddr     string
 	ProxyPort     int
 
@@ -231,6 +232,7 @@ func (c Config) EngineConfig() enginebuiltin.Config {
 		OnPeerData:          c.OnPeerData,
 		DNSServer:           c.DNSServer,
 		Resolver:            c.Resolver,
+		InterfaceName:       c.InterfaceName,
 		ProxyAddr:           c.ProxyAddr,
 		ProxyPort:           c.ProxyPort,
 		RequireTargetedPeer: c.RequireTargetedPeer,

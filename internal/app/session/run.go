@@ -25,7 +25,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 	}
 	cfg = prepared
-	cfg.Resolver = tunnelcore.Resolver(cfg.Resolver, cfg.DNSServer)
+	cfg.Resolver = tunnelcore.ResolverForInterface(cfg.Resolver, cfg.DNSServer, cfg.InterfaceName)
 	liveness, err := livenessConfig(cfg)
 	if err != nil {
 		return err
@@ -85,6 +85,7 @@ func runServer(
 	err := server.Run(ctx, server.Config{
 		Transport: cfg.Transport, Provider: cfg.Provider, RoomURL: roomURL, ChannelID: cfg.ChannelID,
 		KeyHex: cfg.KeyHex, DNSServer: cfg.DNSServer, Resolver: cfg.Resolver,
+		InterfaceName:  cfg.InterfaceName,
 		SOCKSProxyAddr: cfg.SOCKSProxyAddr, SOCKSProxyPort: cfg.SOCKSProxyPort,
 		SOCKSProxyUser: cfg.SOCKSProxyUser, SOCKSProxyPass: cfg.SOCKSProxyPass,
 		TransportOptions: opts, Engine: cfg.Engine, URL: cfg.URL, Token: cfg.Token,
@@ -122,7 +123,8 @@ func runClient(
 	err := client.Run(ctx, client.Config{
 		Transport: cfg.Transport, Provider: cfg.Provider, RoomURL: roomURL, ChannelID: cfg.ChannelID,
 		KeyHex: cfg.KeyHex, LocalAddr: fmt.Sprintf("%s:%d", cfg.SOCKSHost, cfg.SOCKSPort),
-		DNSServer: cfg.DNSServer, Resolver: cfg.Resolver, SOCKSUser: cfg.SOCKSUser,
+		DNSServer: cfg.DNSServer, Resolver: cfg.Resolver, InterfaceName: cfg.InterfaceName,
+		SOCKSUser: cfg.SOCKSUser,
 		SOCKSPass: cfg.SOCKSPass, TransportOptions: opts, Engine: cfg.Engine,
 		URL: cfg.URL, Token: cfg.Token, ProviderToken: cfg.ProviderToken,
 		Liveness: liveness, Traffic: traffic,

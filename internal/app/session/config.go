@@ -95,6 +95,8 @@ var (
 		"invalid traffic min delay (set traffic.min_delay to a duration >= 0)")
 	ErrTrafficMaxDelayInvalid = errors.New(
 		"invalid traffic max delay (set traffic.max_delay to a duration >= 0 and >= traffic.min_delay)")
+	ErrInterfaceNotFound = errors.New(
+		"network interface not found (set net.interface to an active interface name)")
 	errPositiveDuration    = errors.New("duration must be > 0")
 	errNonNegativeDuration = errors.New("duration must be >= 0")
 )
@@ -143,6 +145,7 @@ type Config struct {
 	SOCKSPass              string
 	DNSServer              string
 	Resolver               *net.Resolver
+	InterfaceName          string
 	SOCKSProxyAddr         string
 	SOCKSProxyPort         int
 	SOCKSProxyUser         string

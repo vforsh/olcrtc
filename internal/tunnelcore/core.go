@@ -32,10 +32,16 @@ func SetupKeySet(keyHex string, role crypto.Role) (*crypto.KeySet, error) {
 
 // Resolver returns the supplied resolver or a protected resolver for dnsServer.
 func Resolver(resolver *net.Resolver, dnsServer string) *net.Resolver {
+	return ResolverForInterface(resolver, dnsServer, "")
+}
+
+// ResolverForInterface returns the supplied resolver or a resolver bound to interfaceName.
+// ai-generated: keep DNS on the same explicit egress interface as provider traffic.
+func ResolverForInterface(resolver *net.Resolver, dnsServer, interfaceName string) *net.Resolver {
 	if resolver != nil {
 		return resolver
 	}
-	return protect.NewResolver(dnsServer)
+	return protect.NewBoundResolver(dnsServer, interfaceName)
 }
 
 // PushData forwards one transport frame to conn when a session is installed.

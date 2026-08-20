@@ -120,6 +120,7 @@ func TestApplySettingsOverlaysNonZeroFields(t *testing.T) {
 
 	got := ApplySettings(base, Settings{
 		Crypto: Crypto{Key: "override"},
+		Net:    Net{Interface: "en1"},
 		SOCKS:  SOCKS{Port: 1234},
 	})
 
@@ -133,6 +134,9 @@ func TestApplySettingsOverlaysNonZeroFields(t *testing.T) {
 
 	if got.SOCKSHost != "kept-host" {
 		t.Errorf("SOCKSHost: got %q, want kept-host (zero override keeps base)", got.SOCKSHost)
+	}
+	if got.InterfaceName != "en1" {
+		t.Errorf("InterfaceName: got %q, want en1", got.InterfaceName)
 	}
 }
 

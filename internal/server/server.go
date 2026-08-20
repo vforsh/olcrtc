@@ -96,6 +96,7 @@ type Config struct {
 	KeyHex           string
 	DNSServer        string
 	Resolver         *net.Resolver
+	InterfaceName    string
 	SOCKSProxyAddr   string
 	SOCKSProxyPort   int
 	SOCKSProxyUser   string
@@ -146,7 +147,8 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	s := &Server{
 		keys: keys, authHook: hook, onOpen: onOpen, onClose: onClose, onTraffic: onTraffic,
-		dnsServer: cfg.DNSServer, resolver: tunnelcore.Resolver(cfg.Resolver, cfg.DNSServer),
+		dnsServer:      cfg.DNSServer,
+		resolver:       tunnelcore.ResolverForInterface(cfg.Resolver, cfg.DNSServer, cfg.InterfaceName),
 		socksProxyAddr: cfg.SOCKSProxyAddr, socksProxyPort: cfg.SOCKSProxyPort,
 		socksProxyUser: cfg.SOCKSProxyUser, socksProxyPass: cfg.SOCKSProxyPass,
 		liveness: cfg.Liveness, health: runtime.NewHealthTracker(cfg.OnHealth),

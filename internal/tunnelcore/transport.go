@@ -17,6 +17,7 @@ type LinkConfig struct {
 	ProviderToken string
 	ChannelID     string
 	DNSServer     string
+	InterfaceName string
 	Options       transport.Options
 	Traffic       transport.TrafficConfig
 }
@@ -47,7 +48,8 @@ func BuildTransportConfig(base LinkConfig, role LinkRoleConfig) transport.Config
 		OnData:              role.OnData,
 		OnPeerData:          role.OnPeerData,
 		DNSServer:           base.DNSServer,
-		Resolver:            Resolver(role.Resolver, base.DNSServer),
+		Resolver:            ResolverForInterface(role.Resolver, base.DNSServer, base.InterfaceName),
+		InterfaceName:       base.InterfaceName,
 		ProxyAddr:           role.ProxyAddr,
 		ProxyPort:           role.ProxyPort,
 		RequireTargetedPeer: role.RequireTargetedPeer,

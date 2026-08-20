@@ -62,6 +62,7 @@ Speed in descending order: `datachannel` > `vp8channel` > `seichannel` > `videoc
 | YAML field | Description |
 |-----------|----------|
 | `debug` | `true` for verbose connection logs |
+| `net.interface` | Optional OS interface name (for example `en1`). For Jitsi on supported platforms, DNS, HTTP/WebSocket signaling, and ICE sockets are bound to it; Pion gathers candidates only from that interface. An invalid or inactive name fails startup. Empty preserves normal routing. |
 | `auth.token` | Pre-issued account token for `wbstream`. Obtain it from a trusted account-token source; logs redact tokens and never expose them. When set, the session joins as that account instead of an anonymous guest; empty uses the guest flow. Practical effect for `datachannel`: a guest token carries `canPublishData=false`, so the SCTP data channel opens but routes no bytes (the tunnel is up and silent); an account token with moderator rights carries `canPublishData=true` and routes data normally. So `datachannel` over `wbstream` requires an `auth.token` with publish rights; on the guest flow use `vp8channel`, `seichannel` or `videochannel` instead. To grant moderator: open the participants list, then the three dots next to the client/server entry, then the `Moderator` button (needed on both sides) |
 | `profiles` | List of failover profiles for `srv`/`cnc` |
 | `failover.retry_delay` | Pause before the next profile, e.g. `2s` |

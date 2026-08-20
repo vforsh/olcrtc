@@ -48,7 +48,8 @@ const (
 // ProtectedNet implements pion's transport.Net with socket protection and
 // tunnel-interface filtering.
 type ProtectedNet struct {
-	resolver *net.Resolver
+	resolver      *net.Resolver
+	interfaceName string
 }
 
 // NewProtectedNet builds a ProtectedNet with platform-specific interface
@@ -65,6 +66,14 @@ func NewProtectedNet(resolvers ...*net.Resolver) (*ProtectedNet, error) {
 	return &ProtectedNet{resolver: firstResolver(resolvers)}, nil
 }
 
+// NewBoundProtectedNet builds a Pion network restricted to interfaceName.
+// ai-generated: expose exact candidate enumeration and socket binding for ICE.
+//
+//nolint:unparam // error keeps parity with NewProtectedNet and future validation hooks
+func NewBoundProtectedNet(interfaceName string, resolvers ...*net.Resolver) (*ProtectedNet, error) {
+	return &ProtectedNet{resolver: firstResolver(resolvers), interfaceName: interfaceName}, nil
+}
+
 // Interfaces returns system interfaces after filtering tunnel-style devices.
 func (n *ProtectedNet) Interfaces() ([]*transport.Interface, error) {
 	interfaces, err := loadInterfaces()
@@ -73,7 +82,7 @@ func (n *ProtectedNet) Interfaces() ([]*transport.Interface, error) {
 	}
 	out := make([]*transport.Interface, 0, len(interfaces))
 	for _, ifc := range interfaces {
-		if !isTunInterface(ifc.Name) {
+		if !isTunInterface(ifc.Name) && (n.interfaceName == "" || ifc.Name == n.interfaceName) {
 			out = append(out, ifc)
 		}
 	}
@@ -91,6 +100,9 @@ func (n *ProtectedNet) InterfaceByIndex(index int) (*transport.Interface, error)
 			if isTunInterface(ifc.Name) {
 				return nil, transport.ErrInterfaceNotFound
 			}
+			if n.interfaceName != "" && ifc.Name != n.interfaceName {
+				return nil, transport.ErrInterfaceNotFound
+			}
 			return ifc, nil
 		}
 	}
@@ -100,6 +112,9 @@ func (n *ProtectedNet) InterfaceByIndex(index int) (*transport.Interface, error)
 // InterfaceByName applies the same filtering as Interfaces.
 func (n *ProtectedNet) InterfaceByName(name string) (*transport.Interface, error) {
 	if isTunInterface(name) {
+		return nil, transport.ErrInterfaceNotFound
+	}
+	if n.interfaceName != "" && name != n.interfaceName {
 		return nil, transport.ErrInterfaceNotFound
 	}
 	interfaces, err := loadInterfaces()
@@ -125,7 +140,7 @@ func isTunInterface(name string) bool {
 
 // ListenPacket listens for packets on a protected socket.
 func (n *ProtectedNet) ListenPacket(network, address string) (net.PacketConn, error) {
-	lc := net.ListenConfig{Control: controlFunc}
+	lc := net.ListenConfig{Control: controlFuncForInterface(n.interfaceName)}
 	conn, err := lc.ListenPacket(context.Background(), network, address)
 	if err != nil {
 		return nil, fmt.Errorf("listen packet %s %q: %w", network, address, err)
@@ -135,7 +150,7 @@ func (n *ProtectedNet) ListenPacket(network, address string) (net.PacketConn, er
 
 // ListenUDP listens for UDP packets on a protected socket.
 func (n *ProtectedNet) ListenUDP(network string, locAddr *net.UDPAddr) (transport.UDPConn, error) {
-	lc := net.ListenConfig{Control: controlFunc}
+	lc := net.ListenConfig{Control: controlFuncForInterface(n.interfaceName)}
 	address := udpAddrString(locAddr)
 	pc, err := lc.ListenPacket(context.Background(), network, address)
 	if err != nil {
@@ -151,7 +166,7 @@ func (n *ProtectedNet) ListenUDP(network string, locAddr *net.UDPAddr) (transpor
 
 // Dial connects to the address on a protected socket.
 func (n *ProtectedNet) Dial(network, address string) (net.Conn, error) {
-	d := net.Dialer{Control: controlFunc, Resolver: n.resolver}
+	d := net.Dialer{Control: controlFuncForInterface(n.interfaceName), Resolver: n.resolver}
 	conn, err := d.Dial(network, address)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s %q: %w", network, address, err)
@@ -161,7 +176,7 @@ func (n *ProtectedNet) Dial(network, address string) (net.Conn, error) {
 
 // DialUDP connects to a UDP address on a protected socket.
 func (n *ProtectedNet) DialUDP(network string, laddr, raddr *net.UDPAddr) (transport.UDPConn, error) {
-	d := net.Dialer{Control: controlFunc, Resolver: n.resolver}
+	d := net.Dialer{Control: controlFuncForInterface(n.interfaceName), Resolver: n.resolver}
 	if laddr != nil {
 		d.LocalAddr = laddr
 	}
@@ -180,7 +195,7 @@ func (n *ProtectedNet) DialUDP(network string, laddr, raddr *net.UDPAddr) (trans
 
 // DialTCP connects to a TCP address on a protected socket.
 func (n *ProtectedNet) DialTCP(network string, laddr, raddr *net.TCPAddr) (transport.TCPConn, error) {
-	d := net.Dialer{Control: controlFunc, Resolver: n.resolver}
+	d := net.Dialer{Control: controlFuncForInterface(n.interfaceName), Resolver: n.resolver}
 	if laddr != nil {
 		d.LocalAddr = laddr
 	}
@@ -199,7 +214,7 @@ func (n *ProtectedNet) DialTCP(network string, laddr, raddr *net.TCPAddr) (trans
 
 // ListenTCP listens for TCP connections on a protected socket.
 func (n *ProtectedNet) ListenTCP(network string, laddr *net.TCPAddr) (transport.TCPListener, error) {
-	lc := net.ListenConfig{Control: controlFunc}
+	lc := net.ListenConfig{Control: controlFuncForInterface(n.interfaceName)}
 	address := tcpAddrString(laddr)
 	l, err := lc.Listen(context.Background(), network, address)
 	if err != nil {
@@ -393,9 +408,9 @@ func (n *ProtectedNet) CreateDialer(d *net.Dialer) transport.Dialer {
 		dialer.Resolver = n.resolver
 	}
 	if dialer.ControlContext != nil {
-		dialer.ControlContext = chainControlContext(dialer.ControlContext)
+		dialer.ControlContext = chainControlContext(n.interfaceName, dialer.ControlContext)
 	} else {
-		dialer.Control = chainControl(dialer.Control)
+		dialer.Control = chainControl(n.interfaceName, dialer.Control)
 	}
 	return &protectedDialer{dialer: dialer}
 }
@@ -407,7 +422,7 @@ func (n *ProtectedNet) CreateListenConfig(lc *net.ListenConfig) transport.Listen
 	if lc != nil {
 		cfg = *lc
 	}
-	cfg.Control = chainControl(cfg.Control)
+	cfg.Control = chainControl(n.interfaceName, cfg.Control)
 	return &protectedListenConfig{lc: cfg}
 }
 
@@ -445,10 +460,11 @@ func (p *protectedListenConfig) ListenPacket(ctx context.Context, network, addre
 
 // chainControl runs the protector first, then any existing Control hook.
 func chainControl(
+	interfaceName string,
 	next func(network, address string, c syscall.RawConn) error,
 ) func(network, address string, c syscall.RawConn) error {
 	return func(network, address string, c syscall.RawConn) error {
-		if err := controlFunc(network, address, c); err != nil {
+		if err := controlFuncForInterface(interfaceName)(network, address, c); err != nil {
 			return err
 		}
 		if next != nil {
@@ -460,10 +476,11 @@ func chainControl(
 
 // chainControlContext runs the protector first, then any existing ControlContext hook.
 func chainControlContext(
+	interfaceName string,
 	next func(context.Context, string, string, syscall.RawConn) error,
 ) func(context.Context, string, string, syscall.RawConn) error {
 	return func(ctx context.Context, network, address string, c syscall.RawConn) error {
-		if err := controlFunc(network, address, c); err != nil {
+		if err := controlFuncForInterface(interfaceName)(network, address, c); err != nil {
 			return err
 		}
 		if next != nil {

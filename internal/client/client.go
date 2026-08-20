@@ -108,6 +108,7 @@ type Config struct {
 	LocalAddr        string
 	DNSServer        string
 	Resolver         *net.Resolver
+	InterfaceName    string
 	SOCKSUser        string
 	SOCKSPass        string
 	TransportOptions transport.Options
