@@ -6,6 +6,7 @@ import (
 
 	"github.com/xtaci/smux"
 
+	"github.com/openlibrecommunity/olcrtc/internal/diagnostic"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
@@ -25,7 +26,7 @@ func (s *Server) bringUpLink(ctx context.Context, cfg Config, cancel context.Can
 	})
 	ln, err := transport.New(ctx, cfg.Transport, linkCfg)
 	if err != nil {
-		return fmt.Errorf("failed to create transport: %w", err)
+		return diagnostic.Wrap(diagnostic.CategoryProviderSetup, fmt.Errorf("failed to create transport: %w", err))
 	}
 	s.ln = ln
 	if peerLn, ok := ln.(transport.PeerTransport); ok && peerLn.SupportsPeerRouting() {
@@ -48,7 +49,7 @@ func (s *Server) bringUpLink(ctx context.Context, cfg Config, cancel context.Can
 		s.installControlSession(ctx)
 	}
 	if err := ln.Connect(ctx); err != nil {
-		return fmt.Errorf("failed to connect link: %w", err)
+		return diagnostic.Wrap(diagnostic.CategoryProviderConnect, fmt.Errorf("failed to connect link: %w", err))
 	}
 	logger.Infof("Link connected")
 	s.logPeersLine()

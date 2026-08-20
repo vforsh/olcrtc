@@ -28,6 +28,7 @@ import (
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	configpkg "github.com/openlibrecommunity/olcrtc/internal/config"
 	"github.com/openlibrecommunity/olcrtc/internal/control"
+	"github.com/openlibrecommunity/olcrtc/internal/diagnostic"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/names"
 	"github.com/openlibrecommunity/olcrtc/internal/supervisor"
@@ -35,6 +36,18 @@ import (
 
 // shutdownGrace bounds how long a cancelled session may take to unwind.
 const shutdownGrace = 5 * time.Second
+
+const (
+	exitRuntime         = 1
+	exitConfig          = 2
+	exitProviderSetup   = 10
+	exitProviderConnect = 11
+	exitTunnelSetup     = 12
+	exitHandshake       = 13
+	exitPeerIdentity    = 14
+	exitPeerWait        = 15
+	exitLocalListener   = 16
+)
 
 // ErrConfigPathRequired is returned when no config file is provided.
 var ErrConfigPathRequired = errors.New("usage: olcrtc <config.yaml>")
@@ -75,7 +88,41 @@ func main() {
 	flushStderrFilter()
 
 	if err != nil {
-		os.Exit(1)
+		status := statusForError(err)
+		_, _ = fmt.Fprintf(os.Stderr, "OLCRTC_EXIT category=%s code=%d\n", status.category, status.code)
+		os.Exit(status.code)
+	}
+}
+
+type exitStatus struct {
+	category diagnostic.Category
+	code     int
+}
+
+// ai-generated: statusForError maps internal categories onto the stable CLI exit contract.
+func statusForError(err error) exitStatus {
+	category := diagnostic.CategoryOf(err)
+	switch category {
+	case diagnostic.CategoryRuntime:
+		return exitStatus{category: category, code: exitRuntime}
+	case diagnostic.CategoryConfig:
+		return exitStatus{category: category, code: exitConfig}
+	case diagnostic.CategoryProviderSetup:
+		return exitStatus{category: category, code: exitProviderSetup}
+	case diagnostic.CategoryProviderConnect:
+		return exitStatus{category: category, code: exitProviderConnect}
+	case diagnostic.CategoryTunnelSetup:
+		return exitStatus{category: category, code: exitTunnelSetup}
+	case diagnostic.CategoryHandshake:
+		return exitStatus{category: category, code: exitHandshake}
+	case diagnostic.CategoryPeerIdentity:
+		return exitStatus{category: category, code: exitPeerIdentity}
+	case diagnostic.CategoryPeerWait:
+		return exitStatus{category: category, code: exitPeerWait}
+	case diagnostic.CategoryLocalListener:
+		return exitStatus{category: category, code: exitLocalListener}
+	default:
+		return exitStatus{category: diagnostic.CategoryRuntime, code: exitRuntime}
 	}
 }
 
@@ -88,12 +135,12 @@ func runWithArgs(args []string) error {
 	session.RegisterDefaults()
 
 	if len(args) != 1 || args[0] == "-h" || args[0] == "--help" || args[0] == "-help" {
-		return ErrConfigPathRequired
+		return diagnostic.Wrap(diagnostic.CategoryConfig, ErrConfigPathRequired)
 	}
 
 	cfg, err := loadConfig(args[0])
 	if err != nil {
-		return err
+		return diagnostic.Wrap(diagnostic.CategoryConfig, err)
 	}
 	configureLogRedaction(cfg)
 
@@ -157,7 +204,7 @@ func runWithConfig(cfg loadedConfig) error {
 
 	if scfg.Mode == session.ModeGen {
 		if len(cfg.profiles) > 0 {
-			return ErrProfilesUnsupportedForGen
+			return diagnostic.Wrap(diagnostic.CategoryConfig, ErrProfilesUnsupportedForGen)
 		}
 
 		return runGen(scfg)
@@ -184,11 +231,11 @@ func prepareProfiles(profiles []supervisor.Profile) []supervisor.Profile {
 
 func runSessionMode(dataDir string, scfg session.Config) error {
 	if err := session.Validate(scfg); err != nil {
-		return fmt.Errorf("validate config: %w", err)
+		return diagnostic.Wrap(diagnostic.CategoryConfig, fmt.Errorf("validate config: %w", err))
 	}
 
 	if err := loadNameOverrides(dataDir); err != nil {
-		return err
+		return diagnostic.Wrap(diagnostic.CategoryConfig, err)
 	}
 
 	// ai-generated: expose a signal-driven typed drain source only for server mode.
@@ -206,12 +253,13 @@ func runSessionMode(dataDir string, scfg session.Config) error {
 func runFailoverSessionMode(dataDir string, profiles []supervisor.Profile, failover failoverConfig) error {
 	for _, profile := range profiles {
 		if err := session.Validate(profile.Config); err != nil {
-			return fmt.Errorf("validate profile %q: %w", profile.Name, err)
+			return diagnostic.Wrap(diagnostic.CategoryConfig,
+				fmt.Errorf("validate profile %q: %w", profile.Name, err))
 		}
 	}
 
 	if err := loadNameOverrides(dataDir); err != nil {
-		return err
+		return diagnostic.Wrap(diagnostic.CategoryConfig, err)
 	}
 
 	return runManaged(func(ctx context.Context) error {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/xtaci/smux"
 
+	"github.com/openlibrecommunity/olcrtc/internal/diagnostic"
 	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
@@ -29,7 +30,7 @@ func (c *Client) bringUpLink(ctx context.Context, cfg Config, cancel context.Can
 	})
 	link, err := transport.New(ctx, cfg.Transport, linkCfg)
 	if err != nil {
-		return fmt.Errorf("failed to create link: %w", err)
+		return diagnostic.Wrap(diagnostic.CategoryProviderSetup, fmt.Errorf("failed to create link: %w", err))
 	}
 	c.ln = link
 	link.SetEndedCallback(func(reason string) {
@@ -43,7 +44,7 @@ func (c *Client) bringUpLink(ctx context.Context, cfg Config, cancel context.Can
 		}
 	})
 	if connectErr := link.Connect(ctx); connectErr != nil {
-		return fmt.Errorf("failed to connect link: %w", connectErr)
+		return diagnostic.Wrap(diagnostic.CategoryProviderConnect, fmt.Errorf("failed to connect link: %w", connectErr))
 	}
 	if cfg.OnProviderJoined != nil {
 		cfg.OnProviderJoined()
@@ -57,22 +58,22 @@ func (c *Client) bringUpLink(ctx context.Context, cfg Config, cancel context.Can
 		if pair != nil {
 			_ = pair.Close()
 		}
-		return fmt.Errorf("create smux sessions: %w", err)
+		return diagnostic.Wrap(diagnostic.CategoryTunnelSetup, fmt.Errorf("create smux sessions: %w", err))
 	}
 	control, serverHello, err := openControlStream(
 		ctx, pair.ControlSession, c.deviceID, c.claims, cfg.ExpectedServer,
 	)
 	if err != nil {
 		_ = pair.Close()
-		return fmt.Errorf("handshake: %w", err)
+		return diagnostic.Wrap(diagnostic.CategoryHandshake, fmt.Errorf("handshake: %w", err))
 	}
 	if err := confirmPeer(link, serverHello.PeerID); err != nil {
 		_ = pair.Close()
-		return err
+		return diagnostic.Wrap(diagnostic.CategoryPeerIdentity, err)
 	}
 	if waitErr := waitForPeer(ctx, link); waitErr != nil {
 		_ = pair.Close()
-		return waitErr
+		return diagnostic.Wrap(diagnostic.CategoryPeerWait, waitErr)
 	}
 	logger.Infof("session %s opened (device=%s)", serverHello.SessionID, c.deviceID)
 	c.sessMu.Lock()
@@ -277,7 +278,10 @@ func (c *Client) retryHandshake(ctx context.Context, cfg Config, cancel context.
 			return
 		}
 		if maxAttempts > 0 && attempt >= maxAttempts {
-			logger.Warnf("client reconnect: exhausted %d handshake attempts (reason=%s) - ending endpoint attempt", attempt, reason)
+			logger.Warnf(
+				"client reconnect: exhausted %d handshake attempts (reason=%s) - ending endpoint attempt",
+				attempt, reason,
+			)
 			cancel()
 			return
 		}

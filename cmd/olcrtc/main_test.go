@@ -11,6 +11,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/app/session"
 	"github.com/openlibrecommunity/olcrtc/internal/control"
+	"github.com/openlibrecommunity/olcrtc/internal/diagnostic"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/supervisor"
 )
@@ -86,6 +87,34 @@ func TestRunWithArgsRequiresConfig(t *testing.T) {
 	}
 	if err := runWithArgs([]string{"a.yaml", "b.yaml"}); !errors.Is(err, ErrConfigPathRequired) {
 		t.Fatalf("runWithArgs(two args) = %v, want %v", err, ErrConfigPathRequired)
+	}
+}
+
+// ai-generated: lock the public CLI category and numeric exit-code contract.
+func TestStatusForError(t *testing.T) {
+	tests := []struct {
+		name     string
+		category diagnostic.Category
+		code     int
+	}{
+		{"runtime", diagnostic.CategoryRuntime, exitRuntime},
+		{"config", diagnostic.CategoryConfig, exitConfig},
+		{"provider setup", diagnostic.CategoryProviderSetup, exitProviderSetup},
+		{"provider connect", diagnostic.CategoryProviderConnect, exitProviderConnect},
+		{"tunnel setup", diagnostic.CategoryTunnelSetup, exitTunnelSetup},
+		{"handshake", diagnostic.CategoryHandshake, exitHandshake},
+		{"peer identity", diagnostic.CategoryPeerIdentity, exitPeerIdentity},
+		{"peer wait", diagnostic.CategoryPeerWait, exitPeerWait},
+		{"local listener", diagnostic.CategoryLocalListener, exitLocalListener},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := diagnostic.Wrap(tt.category, errBoom)
+			got := statusForError(err)
+			if got.category != tt.category || got.code != tt.code {
+				t.Fatalf("statusForError() = %#v, want category=%q code=%d", got, tt.category, tt.code)
+			}
+		})
 	}
 }
 

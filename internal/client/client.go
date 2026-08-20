@@ -18,6 +18,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/crypto"
+	"github.com/openlibrecommunity/olcrtc/internal/diagnostic"
 	"github.com/openlibrecommunity/olcrtc/internal/handshake"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
 	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
@@ -170,7 +171,8 @@ func RunWithAddress(ctx context.Context, cfg Config, onReady func(actualAddr str
 	}
 	listener, err := (&net.ListenConfig{}).Listen(runCtx, "tcp4", cfg.LocalAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", cfg.LocalAddr, err)
+		return diagnostic.Wrap(diagnostic.CategoryLocalListener,
+			fmt.Errorf("failed to listen on %s: %w", cfg.LocalAddr, err))
 	}
 	defer func() { _ = listener.Close() }()
 	actualAddr := listener.Addr().String()
