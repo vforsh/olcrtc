@@ -76,6 +76,24 @@ func (p *streamTransport) sendTo(peerID string, data []byte) error {
 	return nil
 }
 
+// ai-generated: forward priority frames to engines with a priority lane, unshaped like the control plane.
+// SendPriority sends data ahead of queued bulk frames when the engine has a
+// priority lane, and falls back to the ordinary path otherwise. Like the
+// control plane it is not paced by the traffic shaper.
+func (p *streamTransport) SendPriority(peerID string, data []byte) error {
+	lane, ok := p.session.(engine.PrioritySession)
+	if !ok {
+		if peerID == "" {
+			return p.Send(data)
+		}
+		return p.SendTo(peerID, data)
+	}
+	if err := lane.SendPriority(peerID, data); err != nil {
+		return fmt.Errorf("session send priority: %w", err)
+	}
+	return nil
+}
+
 // SupportsPeerRouting reports whether this transport can address individual peers.
 func (p *streamTransport) SupportsPeerRouting() bool {
 	_, ok := p.session.(engine.PeerSession)
@@ -123,8 +141,13 @@ func (p *streamTransport) SetReconnectCallback(cb func()) {
 	p.session.SetReconnectCallback(cb)
 }
 
-// CanSend reports whether transport is ready for sending.
+// CanSend reports whether transport is ready for sending. A full engine
+// backlog reports false so muxconn waits instead of growing the queue that
+// every later frame, control frames included, has to wait behind.
 func (p *streamTransport) CanSend() bool {
+	if backlog, ok := p.session.(engine.BacklogSession); ok && backlog.SendBacklogFull() {
+		return false
+	}
 	return p.session.CanSend()
 }
 

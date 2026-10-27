@@ -48,7 +48,11 @@ func NewSessionPairWithConns(
 	dataConn, controlConn *muxconn.Conn,
 	role SessionRole,
 ) (*SessionPair, error) {
-	dataSession, err := NewSession(dataConn, role, runtime.SmuxConfigFor(tr))
+	dataConfig := runtime.SmuxConfigFor(tr)
+	if role == ClientRole {
+		dataConfig = runtime.ClientSmuxConfigFor(tr)
+	}
+	dataSession, err := NewSession(dataConn, role, dataConfig)
 	if err != nil {
 		_ = dataConn.Close()
 		if controlConn != nil {

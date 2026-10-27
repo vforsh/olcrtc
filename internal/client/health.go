@@ -22,6 +22,7 @@ func (c *Client) startControlLoop(
 	controlCtx, stop := context.WithCancel(ctx)
 	c.sessMu.Lock()
 	c.controlStop = stop
+	dataConn, isolated := c.conn, c.controlConn != nil
 	c.sessMu.Unlock()
 	pingInterval := cfg.Liveness.Interval
 	if pingInterval <= 0 {
@@ -33,6 +34,7 @@ func (c *Client) startControlLoop(
 			cfg.OnServerNotice(notice)
 		}
 	}
+	controlConfig.Progress = tunnelcore.SharedSessionProgress(dataConn, isolated, stream)
 	runner := tunnelcore.ControlRunner{
 		Transport: c.ln, Config: controlConfig, Health: c.health,
 		LogFields: func() string {

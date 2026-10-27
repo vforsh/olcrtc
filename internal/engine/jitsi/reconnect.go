@@ -210,6 +210,7 @@ func (s *Session) drainSendQueue() {
 		select {
 		case <-s.sendQueue:
 		case <-s.peerSendQueue:
+		case <-s.prioSendQueue:
 		default:
 			return
 		}

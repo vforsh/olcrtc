@@ -17,6 +17,7 @@
 package muxconn
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -168,6 +169,15 @@ type Conn struct {
 	// writeTimeout overrides writeReadyTimeout. Zero means the default;
 	// only tests set it.
 	writeTimeout time.Duration
+
+	// sendPriority, when set, sends a frame ahead of queued bulk frames;
+	// prioritySID names the stream whose frames all take that lane.
+	sendPriority func([]byte) error
+	prioritySID  atomic.Uint32
+
+	// inboundFrames counts frames that decrypted, as evidence the peer is
+	// still delivering on this conn.
+	inboundFrames atomic.Uint64
 }
 
 func (c *Conn) sendDeadline() time.Duration {
@@ -180,7 +190,7 @@ func (c *Conn) sendDeadline() time.Duration {
 // New wires a Conn over the given transport. Push must be set as the
 // transport's OnData callback before this conn is used.
 func New(ln transport.Transport, keys *crypto.KeySet) *Conn {
-	return &Conn{
+	c := &Conn{
 		ln:      ln,
 		send:    ln.Send,
 		keys:    keys,
@@ -188,6 +198,10 @@ func New(ln transport.Transport, keys *crypto.KeySet) *Conn {
 		in:      make(chan *[]byte, inboundQueue),
 		closeCh: make(chan struct{}),
 	}
+	if lane, ok := ln.(transport.PrioritySender); ok {
+		c.sendPriority = func(data []byte) error { return lane.SendPriority("", data) }
+	}
+	return c
 }
 
 // NewControl wires a Conn that routes through the transport's isolated
@@ -213,7 +227,7 @@ func NewControl(ln transport.Transport, keys *crypto.KeySet) *Conn {
 
 // NewPeer wires a Conn whose writes are addressed to a specific transport peer.
 func NewPeer(ln transport.PeerTransport, keys *crypto.KeySet, peerID string) *Conn {
-	return &Conn{
+	c := &Conn{
 		ln: ln,
 		send: func(data []byte) error {
 			return ln.SendTo(peerID, data)
@@ -223,6 +237,42 @@ func NewPeer(ln transport.PeerTransport, keys *crypto.KeySet, peerID string) *Co
 		in:      make(chan *[]byte, inboundQueue),
 		closeCh: make(chan struct{}),
 	}
+	if lane, ok := ln.(transport.PrioritySender); ok {
+		c.sendPriority = func(data []byte) error { return lane.SendPriority(peerID, data) }
+	}
+	return c
+}
+
+// ai-generated: route the in-session control stream through the priority lane.
+// SetPrioritySID sends every frame of stream sid through the transport's
+// priority lane. Use it for the control stream when it shares this conn's
+// smux session with bulk streams. 0 disables it.
+func (c *Conn) SetPrioritySID(sid uint32) {
+	c.prioritySID.Store(sid)
+}
+
+// InboundFrames returns how many frames this conn has decrypted so far.
+func (c *Conn) InboundFrames() uint64 {
+	return c.inboundFrames.Load()
+}
+
+// smuxHeaderSize is the smux v2 frame header: version, cmd, little-endian
+// length, little-endian stream id.
+const smuxHeaderSize = 8
+
+// urgent reports whether a plaintext smux frame belongs to the priority
+// stream. Only that stream's frames may overtake queued bulk frames, and all
+// of them do, so no stream is reordered. The receiver's replay window
+// (crypto, 64 records) must exceed the reorder distance: a bulk frame can be
+// overtaken by the frames sealed while it waits in the transport's bounded
+// backlog, so keep that backlog well below the window and the lane limited to
+// low-rate control traffic.
+func (c *Conn) urgent(frame []byte) bool {
+	if c.sendPriority == nil || len(frame) < smuxHeaderSize {
+		return false
+	}
+	sid := c.prioritySID.Load()
+	return sid != 0 && binary.LittleEndian.Uint32(frame[4:8]) == sid
 }
 
 // NewPeerControlUnbound wires a Conn to the per-peer control plane of a
@@ -270,6 +320,7 @@ func (c *Conn) Push(ciphertext []byte) {
 		return
 	}
 	*bufPtr = pt
+	c.inboundFrames.Add(1)
 	if c.closed.Load() {
 		releaseFrameBuf(bufPtr)
 		return
@@ -393,7 +444,11 @@ func (c *Conn) Write(p []byte) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("encrypt: %w", err)
 	}
-	if err := c.send(enc); err != nil {
+	send := c.send
+	if c.urgent(p) {
+		send = c.sendPriority
+	}
+	if err := send(enc); err != nil {
 		return 0, fmt.Errorf("send: %w", err)
 	}
 	return len(p), nil

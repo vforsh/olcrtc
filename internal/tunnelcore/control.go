@@ -8,6 +8,7 @@ import (
 
 	"github.com/openlibrecommunity/olcrtc/internal/control"
 	"github.com/openlibrecommunity/olcrtc/internal/logger"
+	"github.com/openlibrecommunity/olcrtc/internal/muxconn"
 	"github.com/openlibrecommunity/olcrtc/internal/runtime"
 	"github.com/openlibrecommunity/olcrtc/internal/transport"
 )
@@ -18,6 +19,19 @@ func SendControlClose(stream *smux.Stream) error {
 		return fmt.Errorf("send control close: %w", err)
 	}
 	return nil
+}
+
+// ai-generated: prioritize and progress-qualify a control stream that shares the data session.
+// SharedSessionProgress puts a control stream that shares the data session on
+// the priority lane and returns the data conn's inbound frame count for
+// [control.Config.Progress]. An isolated control plane needs neither: it gets
+// nil and stays unchanged.
+func SharedSessionProgress(dataConn *muxconn.Conn, isolated bool, stream *smux.Stream) func() uint64 {
+	if dataConn == nil || isolated {
+		return nil
+	}
+	dataConn.SetPrioritySID(stream.ID())
+	return dataConn.InboundFrames
 }
 
 // ControlRunner runs one control stream with shared tuning and health tracking.

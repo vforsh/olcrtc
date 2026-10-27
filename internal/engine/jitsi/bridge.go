@@ -19,6 +19,21 @@ const (
 	// sendLoop must not wait through a full reconnect because it is the only
 	// consumer of both bounded queues. Old-epoch frames are stale anyway.
 	jSessionWaitTimeout = 2 * time.Second
+
+	// prioritySendQueueSize bounds the priority lane; it carries only the
+	// small, low-rate control stream frames.
+	prioritySendQueueSize = 256
+	// sendBacklogFrames is the bulk backlog at which SendBacklogFull asks the
+	// transport for backpressure. Every queued bulk frame delays the frames
+	// behind it; 16 frames of at most 16 KiB stay under half a second at
+	// 3.5 Mbit/s instead of the thousands DefaultSendQueueSize admits. It also
+	// bounds how far a priority frame reorders records ahead of the
+	// receiver's 64-record replay window, so keep it well below that.
+	sendBacklogFrames = 16
+	// bridgeQueueLowWater keeps the bridge's own FIFO short, so a priority
+	// frame picked by sendLoop does not wait behind bulk frames queued there.
+	bridgeQueueLowWater = 4
+	bridgeDrainPoll     = 2 * time.Millisecond
 )
 
 var bridgeMagic = [4]byte{'O', 'L', 'R', '1'} //nolint:gochecknoglobals // wire protocol constant
@@ -90,6 +105,29 @@ func (s *Session) SendTo(peerID string, data []byte) error {
 	return enqueueBridgeFrame(s, s.peerSendQueue, framed, outbound)
 }
 
+// ai-generated: priority lane ahead of the bulk send queues.
+// SendPriority queues a bridge frame on the priority lane, which sendLoop
+// drains before any bulk frame. peerID "" broadcasts like Send.
+func (s *Session) SendPriority(peerID string, data []byte) error {
+	if s.closed.Load() {
+		return ErrSessionClosed
+	}
+	if !s.bridgeReady.Load() {
+		return ErrBridgeNotReady
+	}
+	framed, err := s.encodeBridgeFrame(data, peerID)
+	if err != nil {
+		return err
+	}
+	return enqueueBridgeFrame(s, s.prioSendQueue, framed, bridgeOutbound{to: peerID, data: framed})
+}
+
+// SendBacklogFull reports whether enough bulk frames are queued that the
+// caller should wait before queueing more.
+func (s *Session) SendBacklogFull() bool {
+	return len(s.sendQueue)+len(s.peerSendQueue) >= sendBacklogFrames
+}
+
 func enqueueBridgeFrame[T any](s *Session, queue chan<- T, framed []byte, value T) error {
 	if s.closed.Load() {
 		return ErrSessionClosed
@@ -110,23 +148,64 @@ func enqueueBridgeFrame[T any](s *Session, queue chan<- T, framed []byte, value 
 	}
 }
 
+// ai-generated: drain the priority lane first and keep the bridge FIFO short for bulk frames.
 func (s *Session) sendLoop() {
+	drain := time.NewTimer(bridgeDrainPoll)
+	drain.Stop()
+	defer drain.Stop()
 	for {
 		select {
 		case <-s.done:
 			return
-		case data, ok := <-s.sendQueue:
-			if !ok {
-				return
-			}
-			s.sendBridgeFrame("", data)
-		case frame, ok := <-s.peerSendQueue:
-			if !ok {
-				return
-			}
+		case frame := <-s.prioSendQueue:
 			s.sendBridgeFrame(frame.to, frame.data)
+			continue
+		default:
+		}
+		if s.bridgeBacklogged() {
+			drain.Reset(bridgeDrainPoll)
+			select {
+			case <-s.done:
+				return
+			case frame := <-s.prioSendQueue:
+				s.sendBridgeFrame(frame.to, frame.data)
+			case <-drain.C:
+			}
+			continue
+		}
+		if !s.sendNextFrame() {
+			return
 		}
 	}
+}
+
+// sendNextFrame blocks for the next frame of any lane and reports false once
+// the session is done.
+func (s *Session) sendNextFrame() bool {
+	select {
+	case <-s.done:
+		return false
+	case frame := <-s.prioSendQueue:
+		s.sendBridgeFrame(frame.to, frame.data)
+	case data, ok := <-s.sendQueue:
+		if !ok {
+			return false
+		}
+		s.sendBridgeFrame("", data)
+	case frame, ok := <-s.peerSendQueue:
+		if !ok {
+			return false
+		}
+		s.sendBridgeFrame(frame.to, frame.data)
+	}
+	return true
+}
+
+// bridgeBacklogged reports whether the bridge's own outbound FIFO already
+// holds enough frames that another bulk frame would only wait there.
+func (s *Session) bridgeBacklogged() bool {
+	jSess := s.jSess.Load()
+	return jSess != nil && jSess.BridgeSendQueueDepth() >= bridgeQueueLowWater
 }
 
 func (s *Session) sendBridgeFrame(to string, data []byte) {

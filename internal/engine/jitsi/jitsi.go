@@ -78,6 +78,8 @@ type Session struct {
 
 	sendQueue     chan []byte
 	peerSendQueue chan bridgeOutbound
+	// prioSendQueue is drained ahead of both bulk queues; see SendPriority.
+	prioSendQueue chan bridgeOutbound
 	bridgeReady   atomic.Bool
 	bridgeGen     atomic.Uint64
 	closed        atomic.Bool
@@ -133,6 +135,7 @@ func New(_ context.Context, cfg engine.Config) (engine.Session, error) {
 		requireTargetedPeer: cfg.RequireTargetedPeer,
 		sendQueue:           make(chan []byte, engine.DefaultSendQueueSize),
 		peerSendQueue:       make(chan bridgeOutbound, engine.DefaultSendQueueSize),
+		prioSendQueue:       make(chan bridgeOutbound, prioritySendQueueSize),
 		peerEpochs:          make(map[string]uint32),
 		jSessReady:          make(chan struct{}),
 		done:                make(chan struct{}),

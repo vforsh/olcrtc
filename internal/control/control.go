@@ -44,6 +44,11 @@ const (
 	// DefaultFailures is the default number of consecutive missed pongs before
 	// the stream is marked unhealthy.
 	DefaultFailures = 4
+	// ProgressFrames is how many inbound frames must arrive while a ping is
+	// outstanding for its timeout not to count as a failure. It is above what
+	// an idle session receives in a timeout (pings, pongs, smux keepalives),
+	// so only real traffic qualifies.
+	ProgressFrames = 16
 )
 
 // MsgType labels a control message.
@@ -151,6 +156,12 @@ type Config struct {
 	OnNotice func(Notice)
 	// Notices is an optional server-side source serialized by the writer loop.
 	Notices <-chan Notice
+	// Progress optionally reports a monotonic count of frames received from
+	// the peer over the same path. A pong that times out while at least
+	// [ProgressFrames] arrived is late behind queued traffic, not lost, and
+	// does not count toward Failures. When the path dies inbound frames stop
+	// within the peer's send windows, so detection resumes.
+	Progress func() uint64
 }
 
 func (cfg Config) withDefaults() Config {
@@ -166,6 +177,13 @@ func (cfg Config) withDefaults() Config {
 	return cfg
 }
 
+// ai-generated: outstanding ping with inbound progress for queue-tolerant liveness.
+// pendingPing is an outstanding ping with the inbound progress seen when it was sent.
+type pendingPing struct {
+	sent     time.Time
+	progress uint64
+}
+
 // Run drives bidirectional ping/pong liveness until ctx is canceled, rw closes,
 // or the configured failure threshold is reached.
 // ai-generated: run control notices through a dedicated queue beside liveness traffic.
@@ -177,7 +195,7 @@ func Run(ctx context.Context, rw io.ReadWriteCloser, cfg Config) error {
 	state := &state{
 		rw:      rw,
 		cfg:     cfg,
-		pending: make(map[uint64]time.Time),
+		pending: make(map[uint64]pendingPing),
 		now:     time.Now,
 		out:     make(chan Message, 16),
 		notices: make(chan Message, 8),
@@ -212,7 +230,7 @@ type state struct {
 	notices chan Message
 
 	mu                 sync.Mutex
-	pending            map[uint64]time.Time
+	pending            map[uint64]pendingPing
 	nextSeq            uint64
 	failures           int
 	lastNoticeSequence uint64
@@ -373,11 +391,15 @@ func (s *state) sendProbe(ctx context.Context) error {
 
 	s.mu.Lock()
 	missedNow := 0
-	for seq, sent := range s.pending {
-		if now.Sub(sent) < s.cfg.Timeout {
+	progress := s.progress()
+	for seq, ping := range s.pending {
+		if now.Sub(ping.sent) < s.cfg.Timeout {
 			continue
 		}
 		delete(s.pending, seq)
+		if s.cfg.Progress != nil && progress-ping.progress >= ProgressFrames {
+			continue
+		}
 		s.failures++
 		missedNow++
 	}
@@ -395,7 +417,7 @@ func (s *state) sendProbe(ctx context.Context) error {
 
 	s.nextSeq++
 	seq := s.nextSeq
-	s.pending[seq] = now
+	s.pending[seq] = pendingPing{sent: now, progress: progress}
 	s.mu.Unlock()
 	if missedNow > 0 && s.cfg.OnMissedPong != nil {
 		s.cfg.OnMissedPong(missed)
@@ -413,7 +435,7 @@ func (s *state) handlePong(msg Message) {
 	now := s.now()
 
 	s.mu.Lock()
-	sent, ok := s.pending[msg.Seq]
+	ping, ok := s.pending[msg.Seq]
 	if ok {
 		delete(s.pending, msg.Seq)
 		s.failures = 0
@@ -425,9 +447,16 @@ func (s *state) handlePong(msg Message) {
 	}
 	s.cfg.OnPong(Health{
 		Seq:      msg.Seq,
-		RTT:      now.Sub(sent),
+		RTT:      now.Sub(ping.sent),
 		LastSeen: now,
 	})
+}
+
+func (s *state) progress() uint64 {
+	if s.cfg.Progress == nil {
+		return 0
+	}
+	return s.cfg.Progress()
 }
 
 func (s *state) enqueue(ctx context.Context, msg Message) error {

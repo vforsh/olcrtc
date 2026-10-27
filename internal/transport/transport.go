@@ -87,6 +87,14 @@ type PeerTransport interface {
 	SupportsPeerRouting() bool
 }
 
+// ai-generated: optional priority send path for latency-critical frames.
+// PrioritySender is implemented by transports that can send a frame ahead of
+// queued bulk frames. peerID "" broadcasts like Send. Callers must keep every
+// frame of one ordered stream in the same lane.
+type PrioritySender interface {
+	SendPriority(peerID string, data []byte) error
+}
+
 // PeerControlPlane is implemented by transports that support per-peer isolated
 // control planes. Each peer identified by peerID gets its own KCP session so
 // that multiple clients can handshake and maintain liveness independently.

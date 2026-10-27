@@ -33,6 +33,14 @@ const (
 	smuxMaxFrameSize     = 32 * 1024
 	smuxMaxReceiveBuffer = 32 * 1024 * 1024
 	smuxMaxStreamBuffer  = 4 * 1024 * 1024
+
+	// ClientStreamWindow is the per-stream window the client advertises in
+	// smux v2 window updates. The sender keeps at most this much of a stream
+	// in flight, so it bounds what a bulk download can queue ahead of control
+	// frames on every hop between server and client. 4 MiB let one download
+	// stream queue ~9 s at 3.5 Mbit/s; 256 KiB still allows ~10 Mbit/s per
+	// stream at 200 ms RTT. The window is receiver-local, so peers need not agree.
+	ClientStreamWindow = 256 * 1024
 )
 
 // ErrKeyRequired is returned when no encryption key is provided.
@@ -108,6 +116,15 @@ func SmuxConfigFor(tr transport.Transport) *smux.Config {
 		return SmuxConfigLong(maxWirePayload)
 	}
 	return SmuxConfig(maxWirePayload)
+}
+
+// ai-generated: client data-session config with the bounded advertised stream window.
+// ClientSmuxConfigFor is SmuxConfigFor with the client's advertised stream
+// window; see ClientStreamWindow.
+func ClientSmuxConfigFor(tr transport.Transport) *smux.Config {
+	cfg := SmuxConfigFor(tr)
+	cfg.MaxStreamBuffer = ClientStreamWindow
+	return cfg
 }
 
 // LivenessTimeout returns the control-stream pong timeout for a transport:

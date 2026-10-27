@@ -92,6 +92,20 @@ type PeerSession interface {
 	SendTo(peerID string, data []byte) error
 }
 
+// ai-generated: optional priority lane and send-backlog signal for engines with an outbound queue.
+// PrioritySession is implemented by engines whose outbound queue has a lane
+// that is sent ahead of bulk frames. Frames of one ordered stream must all use
+// the same lane.
+type PrioritySession interface {
+	SendPriority(peerID string, data []byte) error
+}
+
+// BacklogSession is implemented by engines that can report a full outbound
+// backlog, so the transport applies backpressure instead of queueing more.
+type BacklogSession interface {
+	SendBacklogFull() bool
+}
+
 // PeerReadySession is implemented by engines that can signal when a remote
 // peer has appeared in the shared room. WaitForPeer blocks until the first
 // epoch frame from a remote participant is received, or ctx is cancelled.

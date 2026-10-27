@@ -390,13 +390,18 @@ func (s *Server) acceptPeerHandshake(ctx context.Context, peer *peerSession) {
 		s.onOpen(sessionID, hello.DeviceID, hello.Claims)
 		s.trackPeerOpen(sessionID, hello.DeviceID)
 		logger.Infof("peer session %s opened (peer=%s device=%s)", sessionID, peer.peerID, hello.DeviceID)
-		s.startPeerControlLoop(ctx, peer, stream)
+		s.startPeerControlLoop(ctx, peer, stream, nil)
 		return
 	}
 }
 
 // ai-generated: serialize notices for peer-mode server control streams.
-func (s *Server) startPeerControlLoop(ctx context.Context, peer *peerSession, stream *smux.Stream) {
+func (s *Server) startPeerControlLoop(
+	ctx context.Context,
+	peer *peerSession,
+	stream *smux.Stream,
+	progress func() uint64,
+) {
 	controlCtx, stop := context.WithCancel(ctx)
 	if !peer.setControl(stream, stop) {
 		stop()
@@ -405,6 +410,7 @@ func (s *Server) startPeerControlLoop(ctx context.Context, peer *peerSession, st
 	}
 	controlConfig := s.liveness
 	controlConfig.Notices = s.notices
+	controlConfig.Progress = progress
 	runner := tunnelcore.ControlRunner{
 		Transport: s.ln, Config: controlConfig, Health: s.health,
 		LogFields: func() string { return "role=server peer=" + peer.peerID },
@@ -467,7 +473,7 @@ func (s *Server) establishPeerSession(peer *peerSession) bool {
 		_ = stream.Close()
 		return false
 	}
-	s.startPeerControlLoop(ctx, peer, stream)
+	s.startPeerControlLoop(ctx, peer, stream, tunnelcore.SharedSessionProgress(peer.dataConn(), false, stream))
 	return true
 }
 
