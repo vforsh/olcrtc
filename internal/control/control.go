@@ -374,6 +374,13 @@ func (s *state) probeLoop(ctx context.Context) error {
 	ticker := time.NewTicker(s.cfg.Interval)
 	defer ticker.Stop()
 
+	// ai-generated: probe a new control stream at once instead of after Interval.
+	// The first pong is a reopened session's proof of liveness; waiting a
+	// whole interval for it kept clients reconnecting 5 s after a reopen.
+	if err := s.sendProbe(ctx); err != nil {
+		return err
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
