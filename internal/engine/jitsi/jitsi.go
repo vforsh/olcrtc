@@ -62,6 +62,9 @@ type Session struct {
 	name       string
 	resolver   *net.Resolver
 	httpClient *http.Client
+	// providerConns are the sockets httpClient dialed; Close aborts them
+	// when the graceful provider close overruns.
+	providerConns *protect.ConnTracker
 
 	onData              func([]byte)
 	onPeerData          func(peerID string, data []byte)
@@ -124,12 +127,14 @@ func New(_ context.Context, cfg engine.Config) (engine.Session, error) {
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
+	providerConns := &protect.ConnTracker{}
 	s := &Session{
 		host:                host,
 		room:                room,
 		name:                name,
 		resolver:            cfg.Resolver,
-		httpClient:          protect.NewHTTPClient(cfg.Resolver),
+		httpClient:          protect.NewTrackedHTTPClient(providerConns, cfg.Resolver),
+		providerConns:       providerConns,
 		onData:              cfg.OnData,
 		onPeerData:          cfg.OnPeerData,
 		requireTargetedPeer: cfg.RequireTargetedPeer,
@@ -246,6 +251,10 @@ func (s *Session) Close() error {
 		forced := closeProviderSession(
 			jSess.Close,
 			func() error {
+				// Abort the sockets first: on a dead network the XMPP
+				// websocket close below otherwise waits out its 5 s
+				// handshake (every Wi-Fi -> LTE switch on Oct 29).
+				s.providerConns.CloseAll()
 				if conn := jSess.LowLevel(); conn != nil {
 					return conn.Close()
 				}
@@ -292,7 +301,9 @@ func closeProviderSession(
 		return false
 	case <-timer.C:
 	}
-	_ = forceClose()
+	// forceClose may block too (a websocket close handshake); forcedWait
+	// bounds it like the graceful close.
+	go func() { _ = forceClose() }()
 	forcedTimer := time.NewTimer(forcedWait)
 	defer forcedTimer.Stop()
 	select {

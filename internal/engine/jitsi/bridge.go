@@ -33,7 +33,15 @@ const (
 	// bridgeQueueLowWater keeps the bridge's own FIFO short, so a priority
 	// frame picked by sendLoop does not wait behind bulk frames queued there.
 	bridgeQueueLowWater = 4
-	bridgeDrainPoll     = 2 * time.Millisecond
+	// sctpBacklogBytes bounds the SCTP association's buffered bytes (queued
+	// plus unacknowledged) on the SCTP bridge, whose wrapper reports no queue
+	// depth. Without it bulk frames moved straight into pion's unbounded send
+	// queue, limited only by the peer's 4 MiB stream windows, so an upload
+	// queued 4-16 MiB (16-60 s at 2 Mbit/s) ahead of every control frame. 256
+	// KiB holds a priority frame under a second at 2 Mbit/s and still allows
+	// ~10 Mbit/s at 200 ms RTT.
+	sctpBacklogBytes = 256 * 1024
+	bridgeDrainPoll  = 2 * time.Millisecond
 )
 
 var bridgeMagic = [4]byte{'O', 'L', 'R', '1'} //nolint:gochecknoglobals // wire protocol constant
@@ -201,11 +209,27 @@ func (s *Session) sendNextFrame() bool {
 	return true
 }
 
-// bridgeBacklogged reports whether the bridge's own outbound FIFO already
-// holds enough frames that another bulk frame would only wait there.
+// bridgeBacklogged reports whether the bridge's own outbound FIFO, or the
+// SCTP association under an SCTP bridge, already holds enough that another
+// bulk frame would only wait there.
 func (s *Session) bridgeBacklogged() bool {
 	jSess := s.jSess.Load()
-	return jSess != nil && jSess.BridgeSendQueueDepth() >= bridgeQueueLowWater
+	if jSess != nil && jSess.BridgeSendQueueDepth() >= bridgeQueueLowWater {
+		return true
+	}
+	return s.sctpBufferedAmount() >= sctpBacklogBytes
+}
+
+// sctpBufferedAmount reports the peer connection's SCTP buffered bytes, or 0
+// without an association (colibri-ws bridge, or between peer connections).
+func (s *Session) sctpBufferedAmount() int {
+	s.pcMu.Lock()
+	pc := s.pc
+	s.pcMu.Unlock()
+	if pc == nil {
+		return 0
+	}
+	return pc.SCTP().BufferedAmount()
 }
 
 func (s *Session) sendBridgeFrame(to string, data []byte) {
